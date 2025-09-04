@@ -21,7 +21,9 @@ pub(crate) struct FunctionCx<'m, 'clif> {
   pub(crate) bcx: FunctionBuilder<'clif>,
   pub(crate) variables: HashMap<String, Variable>,
 
+  #[allow(dead_code)]
   pub(crate) dst_type: PixelType,
+  #[allow(dead_code)]
   pub(crate) src_types: Vec<PixelType>,
 }
 
