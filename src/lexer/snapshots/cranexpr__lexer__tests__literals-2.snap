@@ -1,0 +1,12 @@
+---
+source: src/lexer/mod.rs
+expression: "lex(\"0b101\")"
+---
+- kind:
+    Literal:
+      kind:
+        Int:
+          base: Binary
+          empty_int: false
+      suffix_start: 5
+  len: 5

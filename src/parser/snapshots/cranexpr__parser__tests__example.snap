@@ -1,0 +1,20 @@
+---
+source: src/parser/mod.rs
+expression: "parse_expr(\"x y 64 * + z 256 * + 3 /\").unwrap()"
+---
+Binary:
+  - Div
+  - Binary:
+      - Add
+      - Binary:
+          - Add
+          - Ident: x
+          - Binary:
+              - Mul
+              - Ident: y
+              - Lit: 64
+      - Binary:
+          - Mul
+          - Ident: z
+          - Lit: 256
+  - Lit: 3

@@ -1,0 +1,10 @@
+---
+source: src/lexer/mod.rs
+expression: "lex(\"f abs\")"
+---
+- kind: Ident
+  len: 1
+- kind: Whitespace
+  len: 1
+- kind: Ident
+  len: 3

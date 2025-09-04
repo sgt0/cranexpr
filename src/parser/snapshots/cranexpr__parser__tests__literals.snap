@@ -1,0 +1,5 @@
+---
+source: src/parser/mod.rs
+expression: "parse_expr(\"1234\").unwrap()"
+---
+Lit: 1234

@@ -1,0 +1,142 @@
+name: CI
+
+on: [push, pull_request, workflow_dispatch]
+
+permissions:
+  attestations: write
+  contents: read
+  id-token: write
+
+jobs:
+  build-release:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-15]
+        target-cpu: [x86-64-v3, x86-64-v4]
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            ext: so
+          - os: windows-latest
+            target: x86_64-pc-windows-gnu
+            ext: dll
+          - os: macos-15
+            target: x86_64-apple-darwin
+            ext: dylib
+          - os: macos-15
+            target: aarch64-apple-darwin
+            target-cpu: apple-m4
+            ext: dylib
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5.0.0
+
+      - name: Setup Rust
+        uses: actions-rust-lang/setup-rust-toolchain@v1.14.1
+        with:
+          target: ${{ matrix.target }}
+          toolchain: nightly
+
+      - name: Print available CPUs
+        run: rustup run nightly rustc --print target-cpus
+
+      - name: Build
+        run: cargo build --release --target ${{ matrix.target }}
+        env:
+          RUSTFLAGS: -C target-cpu=${{ matrix.target-cpu }}
+
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@v3.0.0
+        if: ${{ github.event_name == 'push' }}
+        with:
+          subject-path: target/${{ matrix.target }}/release/*cranexpr.${{ matrix.ext }}
+
+      - name: Upload
+        uses: actions/upload-artifact@v4.6.2
+        with:
+          name: cranexpr-${{ matrix.target }}-${{ matrix.target-cpu }}
+          path: target/${{ matrix.target }}/release/*cranexpr.${{ matrix.ext }}
+
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-15]
+        target-cpu: [x86-64-v3, x86-64-v4]
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            ext: so
+          - os: windows-latest
+            target: x86_64-pc-windows-gnu
+            ext: dll
+          - os: macos-15
+            target: x86_64-apple-darwin
+            ext: dylib
+          - os: macos-15
+            target: aarch64-apple-darwin
+            target-cpu: apple-m4
+            ext: dylib
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5.0.0
+
+      - name: Setup Rust
+        uses: actions-rust-lang/setup-rust-toolchain@v1.14.1
+        with:
+          target: ${{ matrix.target }}
+          toolchain: nightly
+
+      - name: Install cargo-nextest
+        uses: taiki-e/install-action@nextest
+
+      - name: Run tests
+        run: cargo nextest run --all-features --workspace
+        env:
+          RUSTFLAGS: -C target-cpu=${{ matrix.target-cpu }}
+
+
+  clippy:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5.0.0
+
+      - name: Setup Rust
+        uses: actions-rust-lang/setup-rust-toolchain@v1.14.1
+        with:
+          components: clippy
+          toolchain: nightly
+
+      - name: Run Clippy
+        run: cargo clippy
+
+  rustfmt:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5.0.0
+
+      - name: Setup Rust
+        uses: actions-rust-lang/setup-rust-toolchain@v1.14.1
+        with:
+          components: rustfmt
+          toolchain: nightly
+
+      - name: Run rustfmt
+        uses: actions-rust-lang/rustfmt@v1.1.1
+
+  cargo-shear:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5.0.0
+
+      - uses: cargo-bins/cargo-binstall@v1.15.3
+
+      - run: cargo binstall --no-confirm cargo-shear
+
+      - run: cargo shear

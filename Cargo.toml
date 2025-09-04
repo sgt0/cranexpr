@@ -1,0 +1,74 @@
+[package]
+name = "cranexpr"
+version = "0.0.0"
+edition = "2024"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+const-str = "=0.6.4"
+nanoid = "=0.4.0"
+serde = { version = "=1.0.219", features = ["derive"] }
+strum = "=0.27.2"
+strum_macros = "=0.27.2"
+vapours = "=0.2.2"
+vapoursynth4-rs = "=0.4.0"
+
+cranelift = "=0.123.1"
+cranelift-jit = "=0.123.1"
+cranelift-module = "=0.123.1"
+cranelift-native = "=0.123.1"
+
+[dev-dependencies]
+approx = "=0.5.1"
+insta = { version = "=1.43.1", features = ["yaml"] }
+rstest = "=0.26.1"
+
+[patch.crates-io]
+vapoursynth4-rs = { git = "https://github.com/inflation/vapoursynth4-rs", rev = "5685213b75cef2c8ae3e49ed60c71cb7258bc1a5" }
+vapoursynth4-sys = { git = "https://github.com/inflation/vapoursynth4-rs", rev = "5685213b75cef2c8ae3e49ed60c71cb7258bc1a5" }
+
+[profile.release]
+codegen-units = 1
+lto = true
+
+[profile.release-debug]
+inherits = "release"
+debug = true
+
+[lints.rust]
+deprecated_safe = "warn"
+improper_ctypes = "warn"
+improper_ctypes_definitions = "warn"
+non_ascii_idents = "warn"
+rust_2018_idioms = "warn"
+single_use_lifetimes = "warn"
+unexpected_cfgs = { level = "warn", check-cfg = [] }
+unnameable_types = "warn"
+unreachable_pub = { level = "allow", priority = 1 }
+unsafe_op_in_unsafe_fn = "warn"
+
+[lints.clippy]
+all = { level = "warn", priority = -1 }
+nursery = { level = "warn", priority = -1 }
+pedantic = { level = "warn", priority = -1 }
+perf = { level = "warn", priority = -1 }
+
+as_underscore = "warn"
+default_union_representation = "warn"
+inline_asm_x86_att_syntax = "warn"
+undocumented_unsafe_blocks = "allow"
+
+cast_possible_truncation = { level = "allow", priority = 1 }
+cast_possible_wrap = { level = "allow", priority = 1 }
+cast_sign_loss = { level = "allow", priority = 1 }
+module_name_repetitions = { level = "allow", priority = 1 }
+redundant_pub_crate = { level = "allow", priority = 1 }
+similar_names = { level = "allow", priority = 1 }
+too_many_arguments = { level = "allow", priority = 1 }
+too_many_lines = { level = "allow", priority = 1 }
+unreadable_literal = { level = "allow", priority = 1 }
+
+[package.metadata.cargo-shear]
+ignored = ["strum"]

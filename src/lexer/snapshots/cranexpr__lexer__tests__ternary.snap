@@ -1,0 +1,18 @@
+---
+source: src/lexer/mod.rs
+expression: "lex(\"a b c ?\")"
+---
+- kind: Ident
+  len: 1
+- kind: Whitespace
+  len: 1
+- kind: Ident
+  len: 1
+- kind: Whitespace
+  len: 1
+- kind: Ident
+  len: 1
+- kind: Whitespace
+  len: 1
+- kind: Question
+  len: 1

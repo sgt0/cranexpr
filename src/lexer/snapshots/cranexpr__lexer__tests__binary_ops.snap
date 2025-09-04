@@ -1,0 +1,14 @@
+---
+source: src/lexer/mod.rs
+expression: "lex(\"d e <\")"
+---
+- kind: Ident
+  len: 1
+- kind: Whitespace
+  len: 1
+- kind: Ident
+  len: 1
+- kind: Whitespace
+  len: 1
+- kind: Lt
+  len: 1

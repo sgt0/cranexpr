@@ -1,0 +1,8 @@
+---
+source: src/parser/mod.rs
+expression: "parse_expr(\"x dup *\").unwrap()"
+---
+Binary:
+  - Mul
+  - Ident: x
+  - Ident: x

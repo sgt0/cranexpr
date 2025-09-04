@@ -1,0 +1,26 @@
+---
+source: src/parser/mod.rs
+expression: "parse_expr(\"x x y - dup 1.0 * dup1 0.0 * ? -\").unwrap()"
+---
+Binary:
+  - Sub
+  - Ident: x
+  - IfElse:
+      - Binary:
+          - Mul
+          - Binary:
+              - Sub
+              - Ident: x
+              - Ident: y
+          - Lit: 0
+      - Binary:
+          - Mul
+          - Binary:
+              - Sub
+              - Ident: x
+              - Ident: y
+          - Lit: 1
+      - Binary:
+          - Sub
+          - Ident: x
+          - Ident: y

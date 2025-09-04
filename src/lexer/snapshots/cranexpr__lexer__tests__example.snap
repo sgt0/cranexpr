@@ -1,0 +1,64 @@
+---
+source: src/lexer/mod.rs
+expression: "lex(\"x y 64 * + z 256 * + 3 /\")"
+---
+- kind: Ident
+  len: 1
+- kind: Whitespace
+  len: 1
+- kind: Ident
+  len: 1
+- kind: Whitespace
+  len: 1
+- kind:
+    Literal:
+      kind:
+        Int:
+          base: Decimal
+          empty_int: false
+      suffix_start: 2
+  len: 2
+- kind: Whitespace
+  len: 1
+- kind: Star
+  len: 1
+- kind: Whitespace
+  len: 1
+- kind: Plus
+  len: 1
+- kind: Whitespace
+  len: 1
+- kind: Ident
+  len: 1
+- kind: Whitespace
+  len: 1
+- kind:
+    Literal:
+      kind:
+        Int:
+          base: Decimal
+          empty_int: false
+      suffix_start: 3
+  len: 3
+- kind: Whitespace
+  len: 1
+- kind: Star
+  len: 1
+- kind: Whitespace
+  len: 1
+- kind: Plus
+  len: 1
+- kind: Whitespace
+  len: 1
+- kind:
+    Literal:
+      kind:
+        Int:
+          base: Decimal
+          empty_int: false
+      suffix_start: 1
+  len: 1
+- kind: Whitespace
+  len: 1
+- kind: Slash
+  len: 1

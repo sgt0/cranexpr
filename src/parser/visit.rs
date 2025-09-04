@@ -1,0 +1,53 @@
+#![allow(dead_code)]
+
+use crate::parser::ast::{BinOp, Expr, UnOp};
+
+/// A trait for AST visitors. Visits all nodes in the AST recursively.
+pub(crate) trait Visitor<'a>: Sized {
+  fn visit_expr(&mut self, expr: &'a Expr) {
+    walk_expr(self, expr);
+  }
+  fn visit_binary_op(&mut self, op: &'a BinOp) {
+    walk_binary_op(self, op);
+  }
+  fn visit_ident(&mut self, ident: &'a str) {
+    walk_ident(self, ident);
+  }
+  fn visit_prop(&mut self, name: &'a str, prop: &'a str) {
+    walk_prop(self, name, prop);
+  }
+  fn visit_unary_op(&mut self, op: &'a UnOp) {
+    walk_unary_op(self, op);
+  }
+}
+
+fn walk_expr<'a, V: Visitor<'a>>(visitor: &mut V, expr: &'a Expr) {
+  match expr {
+    Expr::Ident(ident) => {
+      visitor.visit_ident(ident);
+    }
+    Expr::Binary(op, left, right) => {
+      visitor.visit_expr(left);
+      visitor.visit_binary_op(op);
+      visitor.visit_expr(right);
+    }
+    Expr::IfElse(condition, then_body, else_body) => {
+      visitor.visit_expr(condition);
+      visitor.visit_expr(then_body);
+      visitor.visit_expr(else_body);
+    }
+    Expr::Prop(name, prop) => {
+      visitor.visit_prop(name, prop);
+    }
+    Expr::Unary(op, operand) => {
+      visitor.visit_unary_op(op);
+      visitor.visit_expr(operand);
+    }
+    Expr::Lit(_) => {}
+  }
+}
+
+const fn walk_binary_op<'a, V: Visitor<'a>>(_visitor: &mut V, _op: &'a BinOp) {}
+const fn walk_ident<'a, V: Visitor<'a>>(_visitor: &mut V, _ident: &'a str) {}
+const fn walk_unary_op<'a, V: Visitor<'a>>(_visitor: &mut V, _op: &'a UnOp) {}
+const fn walk_prop<'a, V: Visitor<'a>>(_visitor: &mut V, _name: &'a str, _prop: &'a str) {}

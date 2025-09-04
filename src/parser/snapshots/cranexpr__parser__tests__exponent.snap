@@ -1,0 +1,13 @@
+---
+source: src/parser/mod.rs
+expression: "parse_expr(\"x 1e-06 + y.PlaneStatsAverage *\").unwrap()"
+---
+Binary:
+  - Mul
+  - Binary:
+      - Add
+      - Ident: x
+      - Lit: 0.000001
+  - Prop:
+      - y
+      - PlaneStatsAverage

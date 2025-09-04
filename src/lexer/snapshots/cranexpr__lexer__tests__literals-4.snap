@@ -1,0 +1,12 @@
+---
+source: src/lexer/mod.rs
+expression: "lex(\"1.0\")"
+---
+- kind:
+    Literal:
+      kind:
+        Float:
+          base: Decimal
+          empty_exponent: false
+      suffix_start: 3
+  len: 3

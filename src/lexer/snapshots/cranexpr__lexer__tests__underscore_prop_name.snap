@@ -1,0 +1,10 @@
+---
+source: src/lexer/mod.rs
+expression: "tokenize(\"x._Combed\").collect::<Vec<_>>()"
+---
+- kind: Ident
+  len: 1
+- kind: Dot
+  len: 1
+- kind: Ident
+  len: 7

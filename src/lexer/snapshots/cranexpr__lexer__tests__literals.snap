@@ -1,0 +1,12 @@
+---
+source: src/lexer/mod.rs
+expression: "lex(\"1234\")"
+---
+- kind:
+    Literal:
+      kind:
+        Int:
+          base: Decimal
+          empty_int: false
+      suffix_start: 4
+  len: 4

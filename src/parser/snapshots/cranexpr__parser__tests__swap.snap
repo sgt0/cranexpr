@@ -1,0 +1,14 @@
+---
+source: src/parser/mod.rs
+expression: "parse_expr(\"3.14 dup 0 > swap 0 < -\").unwrap()"
+---
+Binary:
+  - Sub
+  - Binary:
+      - Gt
+      - Lit: 3.14
+      - Lit: 0
+  - Binary:
+      - Lt
+      - Lit: 3.14
+      - Lit: 0
