@@ -15,10 +15,10 @@ strum_macros = "=0.27.2"
 vapours = "=0.2.2"
 vapoursynth4-rs = "=0.4.0"
 
-cranelift = "=0.123.1"
-cranelift-jit = "=0.123.1"
-cranelift-module = "=0.123.1"
-cranelift-native = "=0.123.1"
+cranelift = "=0.123.2"
+cranelift-jit = "=0.123.2"
+cranelift-module = "=0.123.2"
+cranelift-native = "=0.123.2"
 
 [dev-dependencies]
 approx = "=0.5.1"
