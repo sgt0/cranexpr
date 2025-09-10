@@ -315,7 +315,7 @@ mod tests {
   #[case("3 5 - 10 20 ?", 20.0)]
   #[case("1 2 3 + 4 5 + ?", 5.0)]
   #[case("0 2 3 + 4 5 + ?", 9.0)]
-  // #[case("10 5 3 > 100 200 ? +", 110.0)] // TODO: investigate
+  #[case("10 5 3 > 100 200 ? +", 110.0)]
   #[case("1 10 -1 100 200 ? ?", 10.0)]
   #[case("-1 10 1 100 200 ? ?", 100.0)]
   fn test_ternary(#[case] expr: &str, #[case] expected: f32) {
