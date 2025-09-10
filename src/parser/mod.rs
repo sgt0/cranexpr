@@ -112,9 +112,12 @@ pub(crate) fn parse_expr(expr: &str) -> Result<Expr, String> {
       TokenKind::Lt => add_binary_op(&mut stack, BinOp::Lt),
       TokenKind::Percent => add_binary_op(&mut stack, BinOp::Rem),
       TokenKind::Question => {
-        let cond = stack.pop().unwrap();
-        let yes = stack.pop().unwrap();
+        // Ternary follows the pattern `A B C ?`, which evaluates to `B` if
+        // `A > 0`, and `C` otherwise.
         let no = stack.pop().unwrap();
+        let yes = stack.pop().unwrap();
+        let cond = stack.pop().unwrap();
+
         stack.push(Expr::IfElse(Box::new(cond), Box::new(yes), Box::new(no)));
       }
       _ => todo!("unhandled token: {text:?}"),

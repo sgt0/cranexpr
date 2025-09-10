@@ -7,12 +7,9 @@ Binary:
   - Ident: x
   - IfElse:
       - Binary:
-          - Mul
-          - Binary:
-              - Sub
-              - Ident: x
-              - Ident: y
-          - Lit: 0
+          - Sub
+          - Ident: x
+          - Ident: y
       - Binary:
           - Mul
           - Binary:
@@ -21,6 +18,9 @@ Binary:
               - Ident: y
           - Lit: 1
       - Binary:
-          - Sub
-          - Ident: x
-          - Ident: y
+          - Mul
+          - Binary:
+              - Sub
+              - Ident: x
+              - Ident: y
+          - Lit: 0
