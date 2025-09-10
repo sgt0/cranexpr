@@ -19,18 +19,7 @@ pub(crate) fn translate_expr(fx: &mut FunctionCx<'_, '_>, expr: &Expr) -> Value 
     Expr::Binary(op, lhs, rhs) => {
       let lhs = translate_expr(fx, lhs);
       let rhs = translate_expr(fx, rhs);
-      match op {
-        BinOp::Add => fx.bcx.ins().fadd(lhs, rhs),
-        BinOp::Sub => fx.bcx.ins().fsub(lhs, rhs),
-        BinOp::Mul => fx.bcx.ins().fmul(lhs, rhs),
-        BinOp::Div => fx.bcx.ins().fdiv(lhs, rhs),
-        BinOp::Pow => translate_float_intrinsic_call(fx, "powf", &[lhs, rhs]),
-        BinOp::Rem => translate_float_intrinsic_call(fx, "fmodf", &[lhs, rhs]),
-        BinOp::Gt => fx.bcx.ins().fcmp(FloatCC::GreaterThan, lhs, rhs),
-        BinOp::Lt => fx.bcx.ins().fcmp(FloatCC::LessThan, lhs, rhs),
-        BinOp::Max => fx.bcx.ins().fmax(lhs, rhs),
-        BinOp::Min => fx.bcx.ins().fmin(lhs, rhs),
-      }
+      codegen_float_binop(fx, *op, lhs, rhs)
     }
     Expr::Unary(op, x) => {
       let x = translate_expr(fx, x);
@@ -48,18 +37,7 @@ pub(crate) fn translate_expr(fx: &mut FunctionCx<'_, '_>, expr: &Expr) -> Value 
           // than or equal to 0.
           let zero = fx.bcx.ins().f32const(0.0);
           let condition = fx.bcx.ins().fcmp(FloatCC::LessThanOrEqual, x, zero);
-
-          // `fcmp` says:
-          //
-          // > When comparing scalars, the result is:
-          // > - 1 if the condition holds.
-          // > - 0 if the condition does not hold.
-          //
-          // Unit tests, however, caught it returning very small floats for
-          // the truthy case instead. Hence this conditional select is a bit
-          // of a workaround.
-          let one = fx.bcx.ins().f32const(1.0);
-          fx.bcx.ins().select(condition, one, zero)
+          bool_to_float(fx, condition)
         }
         UnOp::Tangent => translate_float_intrinsic_call(fx, "tanf", &[x]),
         UnOp::Sine => translate_float_intrinsic_call(fx, "sinf", &[x]),
@@ -148,4 +126,32 @@ fn translate_float_intrinsic_call(
   let local_callee = fx.module.declare_func_in_func(callee, fx.bcx.func);
   let call = fx.bcx.ins().call(local_callee, args);
   fx.bcx.inst_results(call)[0]
+}
+
+fn codegen_float_binop(fx: &mut FunctionCx<'_, '_>, op: BinOp, lhs: Value, rhs: Value) -> Value {
+  match op {
+    BinOp::Add => fx.bcx.ins().fadd(lhs, rhs),
+    BinOp::Sub => fx.bcx.ins().fsub(lhs, rhs),
+    BinOp::Mul => fx.bcx.ins().fmul(lhs, rhs),
+    BinOp::Div => fx.bcx.ins().fdiv(lhs, rhs),
+    BinOp::Pow => translate_float_intrinsic_call(fx, "powf", &[lhs, rhs]),
+    BinOp::Rem => translate_float_intrinsic_call(fx, "fmodf", &[lhs, rhs]),
+    BinOp::Gt | BinOp::Lt => {
+      let float_cc = match op {
+        BinOp::Gt => FloatCC::GreaterThan,
+        BinOp::Lt => FloatCC::LessThan,
+        _ => unreachable!("{:?}({:?}, {:?})", op, lhs, rhs),
+      };
+      let result = fx.bcx.ins().fcmp(float_cc, lhs, rhs);
+      bool_to_float(fx, result)
+    }
+    BinOp::Max => fx.bcx.ins().fmax(lhs, rhs),
+    BinOp::Min => fx.bcx.ins().fmin(lhs, rhs),
+  }
+}
+
+fn bool_to_float(fx: &mut FunctionCx<'_, '_>, value: Value) -> Value {
+  let one = fx.bcx.ins().f32const(1.0);
+  let zero = fx.bcx.ins().f32const(0.0);
+  fx.bcx.ins().select(value, one, zero)
 }
