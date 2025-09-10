@@ -104,12 +104,6 @@ dependencies = [
 
 [[package]]
 name = "const-str"
-version = "0.6.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "451d0640545a0553814b4c646eb549343561618838e9b42495f466131fe3ad49"
-
-[[package]]
-name = "const-str"
 version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f4d34b8f066904ed7cfa4a6f9ee96c3214aa998cb44b69ca20bd2054f47402ed"
@@ -291,7 +285,7 @@ name = "cranexpr"
 version = "0.0.0"
 dependencies = [
  "approx",
- "const-str 0.6.4",
+ "const-str",
  "cranelift",
  "cranelift-jit",
  "cranelift-module",
@@ -917,7 +911,7 @@ version = "0.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cedb28f834e9aae077ee2a8dde8ba78001194f8ba85b2294c559e6607aef55d1"
 dependencies = [
- "const-str 0.7.0",
+ "const-str",
  "miette",
  "num-derive",
  "num-traits",
