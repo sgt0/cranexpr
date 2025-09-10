@@ -1,6 +1,7 @@
 pub mod compiler;
 pub mod globals;
 pub mod pixel_type;
+pub mod pointer;
 pub mod translate;
 
 type MainFunc = unsafe extern "C" fn(*mut u8, i64, *const *const u8, i64);
