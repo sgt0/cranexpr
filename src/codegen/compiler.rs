@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
+use cranelift::codegen::ir::immediates::Offset32;
 use cranelift::codegen::isa::TargetIsa;
 use cranelift::codegen::print_errors::pretty_error;
 use cranelift::prelude::*;
@@ -9,6 +10,7 @@ use cranelift_jit::{JITBuilder, JITModule};
 use cranelift_module::{FuncId, Linkage, Module, ModuleError};
 use nanoid::nanoid;
 
+use crate::codegen::pointer::Pointer;
 use crate::codegen::translate::translate_expr;
 use crate::codegen::{MainFunction, pixel_type::PixelType};
 use crate::parser::ast::Expr;
@@ -115,6 +117,7 @@ fn create_entry_fn(
       let params = bcx.block_params(block);
       (params[0], params[1], params[2], params[3])
     };
+    let dest_ptr = Pointer::new(dest_ptr);
 
     let start_idx = bcx.ins().iconst(types::I64, 0);
     let step = bcx.ins().iconst(types::I64, 1);
@@ -132,18 +135,16 @@ fn create_entry_fn(
     codegen_for_loop(&mut fx, start_idx, dest_len, step, |fx, idx| {
       // Loop-variant variables.
       for (var_idx, src_type) in src_types.iter().enumerate() {
-        let src_ptr = fx.bcx.ins().load(
-          pointer_type,
-          MemFlags::new(),
-          src_ptrs,
-          var_idx as i32 * pointer_size,
-        );
+        // srcN
+        let src_ptr_val = Pointer::new(src_ptrs)
+          .offset(fx, Offset32::new(var_idx as i32 * pointer_size))
+          .load(fx, pointer_type, MemFlags::new());
+        let src_ptr = Pointer::new(src_ptr_val);
+
+        // srcN[idx]
         let offset = fx.bcx.ins().imul_imm(idx, src_type.bytes() as i64);
-        let addr = fx.bcx.ins().iadd(src_ptr, offset);
-        let val = fx
-          .bcx
-          .ins()
-          .load((*src_type).into(), MemFlags::new(), addr, 0);
+        let pixel_ptr = src_ptr.offset_value(fx, offset);
+        let val = pixel_ptr.load(fx, (*src_type).into(), MemFlags::new());
 
         // Convert to float.
         let val = match src_type {
@@ -167,10 +168,7 @@ fn create_entry_fn(
         );
       }
 
-      let expr_val: Value = translate_expr(fx, tree);
-
-      let offset = fx.bcx.ins().imul_imm(idx, dst_type.bytes() as i64);
-      let addr = fx.bcx.ins().iadd(dest_ptr, offset);
+      let expr_val = translate_expr(fx, tree);
 
       // Convert output floats to integers if necessary.
       let expr_val = match dst_type {
@@ -185,7 +183,10 @@ fn create_entry_fn(
         PixelType::F32 => expr_val,
       };
 
-      fx.bcx.ins().store(MemFlags::new(), expr_val, addr, 0);
+      let dest_offset = fx.bcx.ins().imul_imm(idx, dst_type.bytes() as i64);
+      dest_ptr
+        .offset_value(fx, dest_offset)
+        .store(fx, expr_val, MemFlags::new());
     });
 
     fx.bcx.ins().return_(&[]);
