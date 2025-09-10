@@ -452,4 +452,16 @@ mod tests {
   fn test_round(#[case] expr: &str, #[case] expected: f32) {
     assert_relative_eq!(run_expr(expr), expected);
   }
+
+  #[rstest]
+  #[case("4 dup0 * sqrt", 4.0)]
+  #[case("5 dup * dup *", 625.0)]
+  #[case("10 20 dup1 + /", 1.0 / 3.0)]
+  #[case("8 3 2 dup2 * + /", 0.42105263)]
+  #[case("10 4 dup swap / -", 9.0)]
+  #[case("100 5 dup1 / swap /", 0.0005)]
+  #[case("10 20 30 40 swap3 / swap - /", -2.3529413)]
+  fn test_stack_manipulation(#[case] expr: &str, #[case] expected: f32) {
+    assert_relative_eq!(run_expr(expr), expected);
+  }
 }
