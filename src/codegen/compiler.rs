@@ -16,6 +16,8 @@ use crate::codegen::{MainFunction, pixel_type::PixelType};
 use crate::parser::ast::Expr;
 use crate::parser::{self};
 
+const SRC_MEMFLAGS: MemFlags = MemFlags::trusted().with_readonly().with_can_move();
+
 pub(crate) struct FunctionCx<'m, 'clif> {
   pub(crate) module: &'m mut dyn Module,
   pub(crate) pointer_type: Type,
@@ -138,13 +140,13 @@ fn create_entry_fn(
         // srcN
         let src_ptr_val = Pointer::new(src_ptrs)
           .offset(fx, Offset32::new(var_idx as i32 * pointer_size))
-          .load(fx, pointer_type, MemFlags::new());
+          .load(fx, pointer_type, SRC_MEMFLAGS);
         let src_ptr = Pointer::new(src_ptr_val);
 
         // srcN[idx]
         let offset = fx.bcx.ins().imul_imm(idx, src_type.bytes() as i64);
         let pixel_ptr = src_ptr.offset_value(fx, offset);
-        let val = pixel_ptr.load(fx, (*src_type).into(), MemFlags::new());
+        let val = pixel_ptr.load(fx, (*src_type).into(), SRC_MEMFLAGS);
 
         // Convert to float.
         let val = match src_type {
