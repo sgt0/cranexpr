@@ -85,6 +85,7 @@ pub(crate) fn parse_expr(expr: &str) -> Result<Expr, String> {
             "max" => add_binary_op(&mut stack, BinOp::Max),
             "min" => add_binary_op(&mut stack, BinOp::Min),
             "not" => add_unary_op(&mut stack, UnOp::Not),
+            "sgn" => add_unary_op(&mut stack, UnOp::Sign),
             "sqrt" => add_unary_op(&mut stack, UnOp::Sqrt),
             "sin" => add_unary_op(&mut stack, UnOp::Sine),
             "tan" => add_unary_op(&mut stack, UnOp::Tangent),

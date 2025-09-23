@@ -11,6 +11,7 @@ plugin that allows one to evaluate an expression per pixel.
 - Comparison: `>`, `<`, `max`, `min`.
 - Rounding: `floor`, `round`.
 - Ternary (if/else): `?`.
+- `sgn`: Returns the sign of a value (-1 if negative, 1 if positive, 0 if zero).
 - Stack manipulation:
   - `dupN`, `dup`: allows a value N steps up in the stack to be duplicated. The
     top value of the stack has index 0 meaning that `dup` is equivalent to

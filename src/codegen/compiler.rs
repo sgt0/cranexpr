@@ -455,6 +455,14 @@ mod tests {
   }
 
   #[rstest]
+  #[case("-20 sgn", -1.0)]
+  #[case("0 sgn", 0.0)]
+  #[case("20 sgn", 1.0)]
+  fn test_sign(#[case] expr: &str, #[case] expected: f32) {
+    assert_relative_eq!(run_expr(expr), expected);
+  }
+
+  #[rstest]
   #[case("4 dup0 * sqrt", 4.0)]
   #[case("5 dup * dup *", 625.0)]
   #[case("10 20 dup1 + /", 1.0 / 3.0)]

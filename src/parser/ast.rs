@@ -61,9 +61,12 @@ pub(crate) enum UnOp {
   /// The `-` operator for negation.
   #[strum(serialize = "-")]
   Neg,
-  /// The `not` operator for logical inversion
+  /// The `not` operator for logical inversion.
   #[strum(serialize = "not")]
   Not,
+  /// The `sgn` operator.
+  #[strum(serialize = "sgn")]
+  Sign,
   /// The square root function.
   #[strum(serialize = "sqrt")]
   Sqrt,

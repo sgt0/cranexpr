@@ -39,6 +39,14 @@ pub(crate) fn translate_expr(fx: &mut FunctionCx<'_, '_>, expr: &Expr) -> Value 
           let condition = fx.bcx.ins().fcmp(FloatCC::LessThanOrEqual, x, zero);
           bool_to_float(fx, condition)
         }
+        UnOp::Sign => {
+          let zero = fx.bcx.ins().f32const(0.0);
+          let one = fx.bcx.ins().f32const(1.0);
+
+          let is_zero = fx.bcx.ins().fcmp(FloatCC::Equal, x, zero);
+          let sign = fx.bcx.ins().fcopysign(one, x);
+          fx.bcx.ins().select(is_zero, zero, sign)
+        }
         UnOp::Tangent => translate_float_intrinsic_call(fx, "tanf", &[x]),
         UnOp::Sine => translate_float_intrinsic_call(fx, "sinf", &[x]),
         UnOp::Sqrt => fx.bcx.ins().sqrt(x),
