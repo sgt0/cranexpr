@@ -46,6 +46,16 @@ pub(crate) fn parse_expr(expr: &str) -> Result<Expr, String> {
           }
           stack.push(Expr::Prop(text.to_string(), prop_text.to_string()));
         }
+        // Drops the top N values from the stack. `drop` is equivalent to
+        // `drop1`.
+        else if let Some(steps) = text.strip_prefix("drop") {
+          let steps = steps.parse::<usize>().unwrap_or(1);
+          let new_len = stack
+            .len()
+            .checked_sub(steps)
+            .expect("attempt to drop out of bounds");
+          stack.truncate(new_len);
+        }
         // Duplicates the topmost stack value.
         //
         // `dupN` allows a value N steps up in the stack to be
@@ -60,8 +70,6 @@ pub(crate) fn parse_expr(expr: &str) -> Result<Expr, String> {
           let to_dupe = stack.get(idx).expect("attempt to dup out of bounds");
           stack.push(to_dupe.clone());
         }
-        // Swaps the topmost and second topmost values.
-        //
         // `swapN` allows a value N steps up in the stack to be swapped.
         // The top value of the stack has index 0 meaning that `swap` is
         // equivalent to `swap1`. This is because `swapN` always swaps

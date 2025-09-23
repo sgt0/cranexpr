@@ -53,7 +53,10 @@ pub(crate) fn translate_expr(fx: &mut FunctionCx<'_, '_>, expr: &Expr) -> Value 
       }
     }
     Expr::Ident(name) => {
-      let variable = fx.variables.get(name).expect("variable not defined");
+      let variable = fx
+        .variables
+        .get(name)
+        .unwrap_or_else(|| panic!("variable not defined: {name}"));
       fx.bcx.use_var(*variable)
     }
     Expr::IfElse(condition, then_body, else_body) => {
