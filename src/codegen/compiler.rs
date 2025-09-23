@@ -155,17 +155,10 @@ fn create_entry_fn(
         // Store it in a variable.
         let var = fx.bcx.declare_var(types::F32);
         fx.bcx.def_var(var, val);
-        fx.variables.insert(
-          // TODO: support an arbitrary number of variables. We're nearly there
-          // with `src_types`, just need to handle all the shorthand aliases.
-          match var_idx {
-            0 => "x".to_string(),
-            1 => "y".to_string(),
-            2 => "z".to_string(),
-            _ => "unknown".to_string(),
-          },
-          var,
-        );
+        fx.variables.insert(format!("src{var_idx}"), var);
+        if let Some(shorthand) = clip_idx_to_shorthand(var_idx as u8) {
+          fx.variables.insert(shorthand.to_string(), var);
+        }
       }
 
       let expr_val = translate_expr(fx, tree);
@@ -254,6 +247,14 @@ fn codegen_for_loop(
   fx.bcx.seal_block(loop_header_block);
   fx.bcx.seal_block(loop_body_block);
   fx.bcx.seal_block(continue_block);
+}
+
+const fn clip_idx_to_shorthand(n: u8) -> Option<char> {
+  match n {
+    0..=2 => Some((b'x' + n) as char),
+    3..=25 => Some((b'a' + (n - 3)) as char),
+    _ => None,
+  }
 }
 
 #[cfg(test)]
