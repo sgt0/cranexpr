@@ -15,7 +15,7 @@ strum_macros = "=0.27.2"
 vapours = "=0.2.3"
 vapoursynth4-rs = "=0.4.0"
 
-cranelift = "=0.124.0"
+cranelift = "=0.124.1"
 cranelift-jit = "=0.124.0"
 cranelift-module = "=0.124.0"
 cranelift-native = "=0.124.0"
