@@ -8,10 +8,12 @@ crate-type = ["cdylib"]
 
 [dependencies]
 const-str = "=0.7.0"
+miette = "=7.6.0"
 nanoid = "=0.4.0"
 serde = { version = "=1.0.226", features = ["derive"] }
 strum = "=0.27.2"
 strum_macros = "=0.27.2"
+thiserror = "=2.0.16"
 vapours = "=0.2.3"
 vapoursynth4-rs = "=0.4.0"
 

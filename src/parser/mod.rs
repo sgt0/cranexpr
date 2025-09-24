@@ -2,22 +2,25 @@ pub(crate) mod ast;
 pub(crate) mod visit;
 
 use crate::{
+  errors::{CranexprError, CranexprResult},
   lexer::{TokenKind, tokenize_with_text},
   parser::ast::{BinOp, Expr, UnOp},
 };
 
-fn add_unary_op(stack: &mut Vec<Expr>, op: UnOp) {
-  let x = stack.pop().unwrap();
+fn add_unary_op(stack: &mut Vec<Expr>, op: UnOp) -> CranexprResult<()> {
+  let x = stack.pop().ok_or(CranexprError::StackUnderflow)?;
   stack.push(Expr::Unary(op, Box::new(x)));
+  Ok(())
 }
 
-fn add_binary_op(stack: &mut Vec<Expr>, op: BinOp) {
-  let right = stack.pop().unwrap();
-  let left = stack.pop().unwrap();
+fn add_binary_op(stack: &mut Vec<Expr>, op: BinOp) -> CranexprResult<()> {
+  let right = stack.pop().ok_or(CranexprError::StackUnderflow)?;
+  let left = stack.pop().ok_or(CranexprError::StackUnderflow)?;
   stack.push(Expr::Binary(op, Box::new(left), Box::new(right)));
+  Ok(())
 }
 
-pub(crate) fn parse_expr(expr: &str) -> Result<Expr, String> {
+pub(crate) fn parse_expr(expr: &str) -> CranexprResult<Expr> {
   let mut stack = Vec::new();
 
   // We don't filter out whitespace tokens because they're significant when it
@@ -38,11 +41,9 @@ pub(crate) fn parse_expr(expr: &str) -> Result<Expr, String> {
         // An identifier followed by a dot is the start of frame property access.
         if tokens.peek().is_some_and(|(k, _)| *k == TokenKind::Dot) {
           tokens.next(); // Consume dot.
-          let (prop_kind, prop_text) = tokens
-            .next()
-            .ok_or_else(|| "missing property".to_string())?;
+          let (prop_kind, prop_text) = tokens.next().ok_or(CranexprError::MissingPropertyName)?;
           if prop_kind != TokenKind::Ident {
-            return Err("property must be an identifier".to_string());
+            return Err(CranexprError::PropertyNameNotAnIdentifier);
           }
           stack.push(Expr::Prop(text.to_string(), prop_text.to_string()));
         }
@@ -98,11 +99,14 @@ pub(crate) fn parse_expr(expr: &str) -> Result<Expr, String> {
             "sin" => add_unary_op(&mut stack, UnOp::Sine),
             "tan" => add_unary_op(&mut stack, UnOp::Tangent),
             "cos" => add_unary_op(&mut stack, UnOp::Cosine),
-            _ => stack.push(Expr::Ident(text.to_string())),
-          }
+            _ => {
+              stack.push(Expr::Ident(text.to_string()));
+              Ok(())
+            }
+          }?;
         }
       }
-      TokenKind::Plus => add_binary_op(&mut stack, BinOp::Add),
+      TokenKind::Plus => add_binary_op(&mut stack, BinOp::Add)?,
       TokenKind::Minus => {
         // First check if the next token is a literal.
         if tokens
@@ -112,27 +116,30 @@ pub(crate) fn parse_expr(expr: &str) -> Result<Expr, String> {
           let (_, text) = tokens.next().unwrap();
           stack.push(Expr::Lit(0.0 - text.parse::<f32>().unwrap()));
         } else {
-          add_binary_op(&mut stack, BinOp::Sub);
+          add_binary_op(&mut stack, BinOp::Sub)?;
         }
       }
-      TokenKind::Star => add_binary_op(&mut stack, BinOp::Mul),
-      TokenKind::Slash => add_binary_op(&mut stack, BinOp::Div),
-      TokenKind::Gt => add_binary_op(&mut stack, BinOp::Gt),
-      TokenKind::Lt => add_binary_op(&mut stack, BinOp::Lt),
-      TokenKind::Percent => add_binary_op(&mut stack, BinOp::Rem),
+      TokenKind::Star => add_binary_op(&mut stack, BinOp::Mul)?,
+      TokenKind::Slash => add_binary_op(&mut stack, BinOp::Div)?,
+      TokenKind::Gt => add_binary_op(&mut stack, BinOp::Gt)?,
+      TokenKind::Lt => add_binary_op(&mut stack, BinOp::Lt)?,
+      TokenKind::Percent => add_binary_op(&mut stack, BinOp::Rem)?,
       TokenKind::Question => {
         // Ternary follows the pattern `A B C ?`, which evaluates to `B` if
         // `A > 0`, and `C` otherwise.
-        let no = stack.pop().unwrap();
-        let yes = stack.pop().unwrap();
-        let cond = stack.pop().unwrap();
+        let no = stack.pop().ok_or(CranexprError::StackUnderflow)?;
+        let yes = stack.pop().ok_or(CranexprError::StackUnderflow)?;
+        let cond = stack.pop().ok_or(CranexprError::StackUnderflow)?;
 
         stack.push(Expr::IfElse(Box::new(cond), Box::new(yes), Box::new(no)));
       }
       _ => todo!("unhandled token: {text:?}"),
     }
   }
-  stack.pop().ok_or_else(|| "Invalid expression".to_string())
+
+  stack
+    .pop()
+    .ok_or(CranexprError::ExpressionEvaluatesToNothing)
 }
 
 #[cfg(test)]

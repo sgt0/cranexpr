@@ -3,27 +3,31 @@ use cranelift_module::{Linkage, Module};
 
 use crate::{
   codegen::compiler::FunctionCx,
+  errors::CranexprError,
   parser::ast::{BinOp, Expr, UnOp},
 };
 
-pub(crate) fn translate_expr(fx: &mut FunctionCx<'_, '_>, expr: &Expr) -> Value {
+pub(crate) fn translate_expr(
+  fx: &mut FunctionCx<'_, '_>,
+  expr: &Expr,
+) -> Result<Value, CranexprError> {
   match expr {
-    Expr::Lit(literal) => fx.bcx.ins().f32const(*literal),
+    Expr::Lit(literal) => Ok(fx.bcx.ins().f32const(*literal)),
     Expr::Prop(name, prop) => {
       let variable = fx
         .variables
         .get(&format!("{name}.{prop}"))
         .expect("frame property variable not defined");
-      fx.bcx.use_var(*variable)
+      Ok(fx.bcx.use_var(*variable))
     }
     Expr::Binary(op, lhs, rhs) => {
-      let lhs = translate_expr(fx, lhs);
-      let rhs = translate_expr(fx, rhs);
-      codegen_float_binop(fx, *op, lhs, rhs)
+      let lhs = translate_expr(fx, lhs)?;
+      let rhs = translate_expr(fx, rhs)?;
+      Ok(codegen_float_binop(fx, *op, lhs, rhs))
     }
     Expr::Unary(op, x) => {
-      let x = translate_expr(fx, x);
-      match op {
+      let x = translate_expr(fx, x)?;
+      Ok(match op {
         UnOp::Abs => fx.bcx.ins().fabs(x),
         UnOp::Cosine => translate_float_intrinsic_call(fx, "cosf", &[x]),
         UnOp::Exp => translate_float_intrinsic_call(fx, "expf", &[x]),
@@ -50,14 +54,14 @@ pub(crate) fn translate_expr(fx: &mut FunctionCx<'_, '_>, expr: &Expr) -> Value 
         UnOp::Tangent => translate_float_intrinsic_call(fx, "tanf", &[x]),
         UnOp::Sine => translate_float_intrinsic_call(fx, "sinf", &[x]),
         UnOp::Sqrt => fx.bcx.ins().sqrt(x),
-      }
+      })
     }
     Expr::Ident(name) => {
       let variable = fx
         .variables
         .get(name)
-        .unwrap_or_else(|| panic!("variable not defined: {name}"));
-      fx.bcx.use_var(*variable)
+        .ok_or_else(|| CranexprError::UndefinedVariable(name.clone()))?;
+      Ok(fx.bcx.use_var(*variable))
     }
     Expr::IfElse(condition, then_body, else_body) => {
       translate_if_else(fx, condition, then_body, else_body)
@@ -70,10 +74,10 @@ fn translate_if_else(
   condition: &Expr,
   then_body: &Expr,
   else_body: &Expr,
-) -> Value {
+) -> Result<Value, CranexprError> {
   // A value is considered truthy if and only if it is greater than 0.
   let zero = fx.bcx.ins().f32const(0.0);
-  let mut condition_value = translate_expr(fx, condition);
+  let mut condition_value = translate_expr(fx, condition)?;
   condition_value = fx
     .bcx
     .ins()
@@ -92,7 +96,7 @@ fn translate_if_else(
 
   fx.bcx.switch_to_block(then_block);
   fx.bcx.seal_block(then_block);
-  let then_return = translate_expr(fx, then_body);
+  let then_return = translate_expr(fx, then_body)?;
 
   // Jump to the merge block, passing it the block return value.
   fx.bcx
@@ -101,7 +105,7 @@ fn translate_if_else(
 
   fx.bcx.switch_to_block(else_block);
   fx.bcx.seal_block(else_block);
-  let else_return = translate_expr(fx, else_body);
+  let else_return = translate_expr(fx, else_body)?;
 
   // Jump to the merge block, passing it the block return value.
   fx.bcx
@@ -116,7 +120,7 @@ fn translate_if_else(
 
   // Read the value of the if-else by reading the merge block
   // parameter.
-  fx.bcx.block_params(merge_block)[0]
+  Ok(fx.bcx.block_params(merge_block)[0])
 }
 
 fn translate_float_intrinsic_call(

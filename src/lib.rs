@@ -1,10 +1,11 @@
 mod codegen;
+mod errors;
 mod lexer;
 mod parser;
 
 use const_str::cstr;
 use std::{
-  ffi::{CStr, CString, c_void},
+  ffi::{CStr, c_void},
   ptr, slice,
 };
 use vapours::{frame::VapoursVideoFrame, generic::HoldsVideoFormat};
@@ -21,7 +22,10 @@ use vapoursynth4_rs::{
   utils::is_constant_video_format,
 };
 
-use crate::codegen::{MainFunction, compiler::compile_jit, pixel_type::PixelType};
+use crate::{
+  codegen::{MainFunction, compiler::compile_jit, pixel_type::PixelType},
+  errors::CranexprError,
+};
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 enum PlaneOp {
@@ -38,7 +42,7 @@ struct CranexprFilter {
 }
 
 impl Filter for CranexprFilter {
-  type Error = CString;
+  type Error = CranexprError;
   type FrameType = VideoFrame;
   type FilterData = ();
 
@@ -50,7 +54,7 @@ impl Filter for CranexprFilter {
     mut core: CoreRef<'_>,
   ) -> Result<(), Self::Error> {
     let Some(num_inputs) = input.num_elements(key!(c"clips")) else {
-      return Err(cstr!("cranexpr: failed to get number of clips.").to_owned());
+      return Err(CranexprError::NumberOfClips);
     };
 
     let nodes = (0..num_inputs)
@@ -62,9 +66,7 @@ impl Filter for CranexprFilter {
       .collect::<Vec<_>>();
     for vi in &video_infos {
       if !is_constant_video_format(vi) {
-        return Err(
-          cstr!("cranexpr: only clips with constant format and dimensions are allowed.").to_owned(),
-        );
+        return Err(CranexprError::VariableFormat);
       }
     }
 
@@ -73,10 +75,7 @@ impl Filter for CranexprFilter {
       let f = core.get_video_format_by_id(format as u32);
       if f.color_family != ColorFamily::Undefined {
         if vi.format.num_planes != f.num_planes {
-          return Err(
-            cstr!("cranexpr: input and output formats have a different number of planes.")
-              .to_owned(),
-          );
+          return Err(CranexprError::PlanesMismatch);
         }
         vi.format = core.query_video_format(
           f.color_family,
@@ -90,7 +89,7 @@ impl Filter for CranexprFilter {
 
     let num_exprs = input.num_elements(key!(c"expr")).unwrap();
     if num_exprs > vi.format.num_planes {
-      return Err(cstr!("cranexpr: more expressions given than there are planes.").to_owned());
+      return Err(CranexprError::MoreExpressionsThanPlanes);
     }
 
     let mut expr = [""; 3];
@@ -142,7 +141,7 @@ impl Filter for CranexprFilter {
         })
         .collect::<Vec<_>>();
 
-      bytecode[i] = Some(compile_jit(expr[i], dst_type, &src_types));
+      bytecode[i] = Some(compile_jit(expr[i], dst_type, &src_types)?);
     }
 
     let filter = Self {

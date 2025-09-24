@@ -13,6 +13,7 @@ use nanoid::nanoid;
 use crate::codegen::pointer::Pointer;
 use crate::codegen::translate::translate_expr;
 use crate::codegen::{MainFunction, pixel_type::PixelType};
+use crate::errors::{CranexprError, CranexprResult};
 use crate::parser::ast::Expr;
 use crate::parser::{self};
 
@@ -67,15 +68,15 @@ pub(crate) fn compile_jit(
   input: &str,
   dst_type: PixelType,
   src_types: &[PixelType],
-) -> MainFunction {
-  let tree = parser::parse_expr(input).unwrap();
+) -> Result<MainFunction, CranexprError> {
+  let tree = parser::parse_expr(input)?;
 
   let mut jit_module = create_jit_module();
 
-  let main_func_id = create_entry_fn(&mut jit_module, &tree, dst_type, src_types);
+  let main_func_id = create_entry_fn(&mut jit_module, &tree, dst_type, src_types)?;
   jit_module.finalize_definitions().unwrap();
   let finalized_main = jit_module.get_finalized_function(main_func_id);
-  MainFunction::from_ptr(finalized_main)
+  Ok(MainFunction::from_ptr(finalized_main))
 }
 
 fn create_entry_fn(
@@ -83,7 +84,7 @@ fn create_entry_fn(
   tree: &Expr,
   dst_type: PixelType,
   src_types: &[PixelType],
-) -> FuncId {
+) -> CranexprResult<FuncId> {
   let pointer_type = m.target_config().pointer_type();
   let pointer_size = pointer_type.bytes() as i32;
 
@@ -163,7 +164,7 @@ fn create_entry_fn(
         }
       }
 
-      let expr_val = translate_expr(fx, tree);
+      let expr_val = translate_expr(fx, tree)?;
 
       // Convert output floats to integers if necessary.
       let expr_val = match dst_type {
@@ -182,7 +183,9 @@ fn create_entry_fn(
       dest_ptr
         .offset_value(fx, dest_offset)
         .store(fx, expr_val, MemFlags::new());
-    });
+
+      Ok(())
+    })?;
 
     fx.bcx.ins().return_(&[]);
     fx.bcx.seal_all_blocks();
@@ -199,7 +202,7 @@ fn create_entry_fn(
 
   // println!("{}", ctx.func.display());
 
-  main_func_id
+  Ok(main_func_id)
 }
 
 fn codegen_for_loop(
@@ -207,8 +210,8 @@ fn codegen_for_loop(
   start_idx: Value,
   stop_idx: Value,
   step: Value,
-  mut codegen_loop_body: impl FnMut(&mut FunctionCx<'_, '_>, Value),
-) {
+  mut codegen_loop_body: impl FnMut(&mut FunctionCx<'_, '_>, Value) -> CranexprResult<()>,
+) -> CranexprResult<()> {
   let current_block = fx.bcx.current_block().unwrap();
   let loop_header_block = fx.bcx.create_block();
   let loop_body_block = fx.bcx.create_block();
@@ -240,7 +243,7 @@ fn codegen_for_loop(
   // Loop body block: do main logic, compute the next index, and then jump back
   // to the loop header block.
   fx.bcx.switch_to_block(loop_body_block);
-  codegen_loop_body(fx, idx);
+  codegen_loop_body(fx, idx)?;
   let next_idx = fx.bcx.ins().iadd(idx, step);
   fx.bcx.ins().jump(loop_header_block, &[next_idx.into()]);
 
@@ -249,6 +252,8 @@ fn codegen_for_loop(
   fx.bcx.seal_block(loop_header_block);
   fx.bcx.seal_block(loop_body_block);
   fx.bcx.seal_block(continue_block);
+
+  Ok(())
 }
 
 const fn clip_idx_to_shorthand(n: u8) -> Option<char> {
@@ -269,7 +274,7 @@ mod tests {
   use super::*;
 
   fn run_expr(expr: &str) -> f32 {
-    let compiled = compile_jit(expr, PixelType::F32, &[]);
+    let compiled = compile_jit(expr, PixelType::F32, &[]).expect("should compile expr");
     let mut dst = vec![0.0];
     unsafe { compiled.invoke(&mut dst, &[&[] as &[u8]]) };
     dst[0]
@@ -363,7 +368,8 @@ mod tests {
 
   #[rstest]
   fn test_variables() {
-    let compiled = compile_jit("x y +", PixelType::F32, &[PixelType::F32, PixelType::F32]);
+    let compiled = compile_jit("x y +", PixelType::F32, &[PixelType::F32, PixelType::F32])
+      .expect("should compile expr");
 
     let mut actual = [0.0f32];
     let x = [3.0f32];

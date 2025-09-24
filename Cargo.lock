@@ -291,11 +291,13 @@ dependencies = [
  "cranelift-module",
  "cranelift-native",
  "insta",
+ "miette",
  "nanoid",
  "rstest",
  "serde",
  "strum",
  "strum_macros",
+ "thiserror",
  "vapours",
  "vapoursynth4-rs",
 ]
