@@ -168,13 +168,14 @@ fn create_entry_fn(
 
       // Convert output floats to integers if necessary.
       let expr_val = match dst_type {
-        PixelType::U8 => {
-          let val = fx.bcx.ins().fcvt_to_uint_sat(types::I32, expr_val);
-          fx.bcx.ins().ireduce(types::I8, val)
-        }
-        PixelType::U16 => {
-          let val = fx.bcx.ins().fcvt_to_uint_sat(types::I32, expr_val);
-          fx.bcx.ins().ireduce(types::I16, val)
+        PixelType::U8 | PixelType::U16 => {
+          let zero = fx.bcx.ins().f32const(0.0);
+          let peak_value = fx.bcx.ins().f32const(dst_type.peak_value());
+
+          let mut clamped = fx.bcx.ins().fmin(expr_val, peak_value);
+          clamped = fx.bcx.ins().fmax(clamped, zero);
+
+          fx.bcx.ins().fcvt_to_uint_sat(types::I32, clamped)
         }
         PixelType::F32 => expr_val,
       };
@@ -480,5 +481,27 @@ mod tests {
   #[case("10 20 30 40 swap3 / swap - /", -2.3529413)]
   fn test_stack_manipulation(#[case] expr: &str, #[case] expected: f32) {
     assert_relative_eq!(run_expr(expr), expected);
+  }
+
+  #[rstest]
+  fn test_integer_format_clamp() {
+    let x = [33839u16];
+
+    let compiled = compile_jit(
+      "x 32768 / 0.86 pow 65535 *",
+      PixelType::U16,
+      &[PixelType::U16],
+    )
+    .expect("should compile expr");
+
+    let mut actual = [0u16];
+
+    unsafe {
+      compiled.invoke(
+        &mut actual,
+        &[slice::from_raw_parts(x.as_ptr().cast::<u8>(), x.len())],
+      );
+    };
+    assert_eq!(actual[0], 65535);
   }
 }
