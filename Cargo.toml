@@ -18,7 +18,7 @@ vapours = "=0.2.3"
 vapoursynth4-rs = "=0.4.0"
 
 cranelift = "=0.124.2"
-cranelift-jit = "=0.124.2"
+cranelift-jit = "=0.125.3"
 cranelift-module = "=0.124.2"
 cranelift-native = "=0.124.2"
 
