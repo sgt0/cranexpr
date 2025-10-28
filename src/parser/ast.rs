@@ -83,10 +83,10 @@ pub(crate) enum UnOp {
 #[derive(Clone, Debug, Serialize)]
 pub(crate) enum Expr {
   /// A binary operation (e.g., `a b +`, `a b *`).
-  Binary(BinOp, Box<Expr>, Box<Expr>),
+  Binary(BinOp, Box<Self>, Box<Self>),
 
   /// A unary operation (e.g., `x sin`, `x exp`).
-  Unary(UnOp, Box<Expr>),
+  Unary(UnOp, Box<Self>),
 
   /// A literal (e.g., `1e-06`).
   Lit(f32),
@@ -95,7 +95,7 @@ pub(crate) enum Expr {
   Ident(String),
 
   /// If/else, ternary.
-  IfElse(Box<Expr>, Box<Expr>, Box<Expr>),
+  IfElse(Box<Self>, Box<Self>, Box<Self>),
 
   /// Access of a frame property (e.g. `x.PlaneStatsAverage`).
   Prop(String, String),
