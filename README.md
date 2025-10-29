@@ -7,7 +7,7 @@ plugin that allows one to evaluate an expression per pixel.
 ## Features
 
 - Arithmetic: `+`, `-`, `*`, `/`, `%`, `pow`, `exp`, `log`, `sqrt`.
-- Trigonometry: `sin`, `cos`, `tan`.
+- Trigonometry: `sin`, `cos`, `tan`, `atan2`.
 - Comparison: `>`, `<`.
 - Clamping: `min`, `max`, `clip`.
 - Rounding: `floor`, `round`.

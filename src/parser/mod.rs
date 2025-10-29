@@ -108,6 +108,7 @@ pub(crate) fn parse_expr(expr: &str) -> CranexprResult<Expr> {
             "tan" => add_unary_op(&mut stack, UnOp::Tangent),
             "cos" => add_unary_op(&mut stack, UnOp::Cosine),
             "clip" => add_ternary_op(&mut stack, TernaryOp::Clip),
+            "atan2" => add_binary_op(&mut stack, BinOp::Atan2),
             _ => {
               stack.push(Expr::Ident(text.to_string()));
               Ok(())
@@ -197,5 +198,10 @@ mod tests {
   #[rstest]
   fn test_clip() {
     assert_yaml_snapshot!(parse_expr("x 16 235 clip").unwrap());
+  }
+
+  #[rstest]
+  fn test_atan2() {
+    assert_yaml_snapshot!(parse_expr("y x atan2").unwrap());
   }
 }
