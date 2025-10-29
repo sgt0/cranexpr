@@ -23,6 +23,10 @@ plugin that allows one to evaluate an expression per pixel.
     top value of the stack has index 0 meaning that `swap` is equivalent to
     `swap1`. This is because `swapN` always swaps with the topmost value at
     index 0.
+- Variables:
+  - `var!`: Pops the top value from the stack and stores it in a variable named
+    `var`.
+  - `var@`: Pushes the value of the variable `var` onto the stack.
 - Supports any number of input clips. `srcN` may be used to access the `N`-th
   input clip. Shorthand aliases `x`, `y`, `z`, `a`, `b`, `c`, etc. map to
   `src0`, `src1`, `src2`, `src3`, `src4`, `src5`, etc., up to `w` being `src25`.

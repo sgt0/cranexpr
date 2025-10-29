@@ -50,7 +50,9 @@ mod tests {
     let expr = parse_expr(input).unwrap();
 
     let mut collector = Globals::default();
-    collector.visit_expr(&expr);
+    for expr in expr {
+      collector.visit_expr(&expr);
+    }
     let mut actual = collector.0.iter().collect::<Vec<_>>();
 
     actual.sort_unstable();

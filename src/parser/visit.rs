@@ -22,6 +22,12 @@ pub(crate) trait Visitor<'a>: Sized {
   fn visit_unary_op(&mut self, op: &'a UnOp) {
     walk_unary_op(self, op);
   }
+  fn visit_store(&mut self, name: &'a str) {
+    walk_store(self, name);
+  }
+  fn visit_load(&mut self, name: &'a str) {
+    walk_load(self, name);
+  }
 }
 
 fn walk_expr<'a, V: Visitor<'a>>(visitor: &mut V, expr: &'a Expr) {
@@ -53,6 +59,13 @@ fn walk_expr<'a, V: Visitor<'a>>(visitor: &mut V, expr: &'a Expr) {
       visitor.visit_expr(operand);
     }
     Expr::Lit(_) => {}
+    Expr::Store(name, expr) => {
+      visitor.visit_expr(expr);
+      visitor.visit_store(name);
+    }
+    Expr::Load(name) => {
+      visitor.visit_load(name);
+    }
   }
 }
 
@@ -61,3 +74,5 @@ const fn walk_ternary_op<'a, V: Visitor<'a>>(_visitor: &mut V, _op: &'a TernaryO
 const fn walk_ident<'a, V: Visitor<'a>>(_visitor: &mut V, _ident: &'a str) {}
 const fn walk_unary_op<'a, V: Visitor<'a>>(_visitor: &mut V, _op: &'a UnOp) {}
 const fn walk_prop<'a, V: Visitor<'a>>(_visitor: &mut V, _name: &'a str, _prop: &'a str) {}
+const fn walk_store<'a, V: Visitor<'a>>(_visitor: &mut V, _name: &'a str) {}
+const fn walk_load<'a, V: Visitor<'a>>(_visitor: &mut V, _name: &'a str) {}
