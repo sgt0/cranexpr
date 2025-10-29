@@ -79,6 +79,14 @@ pub(crate) enum UnOp {
   Tangent,
 }
 
+/// Ternary operator.
+#[derive(Clone, Copy, Debug, Display, EnumString, PartialEq, Serialize)]
+pub(crate) enum TernaryOp {
+  /// The `clip` operator (clamps a value to a range).
+  #[strum(serialize = "clip")]
+  Clip,
+}
+
 /// The AST node for expressions.
 #[derive(Clone, Debug, Serialize)]
 pub(crate) enum Expr {
@@ -87,6 +95,9 @@ pub(crate) enum Expr {
 
   /// A unary operation (e.g., `x sin`, `x exp`).
   Unary(UnOp, Box<Self>),
+
+  /// A ternary operation (e.g., `x min_val max_val clip`).
+  Ternary(TernaryOp, Box<Self>, Box<Self>, Box<Self>),
 
   /// A literal (e.g., `1e-06`).
   Lit(f32),

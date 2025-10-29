@@ -8,7 +8,8 @@ plugin that allows one to evaluate an expression per pixel.
 
 - Arithmetic: `+`, `-`, `*`, `/`, `%`, `pow`, `exp`, `log`, `sqrt`.
 - Trigonometry: `sin`, `cos`, `tan`.
-- Comparison: `>`, `<`, `max`, `min`.
+- Comparison: `>`, `<`.
+- Clamping: `min`, `max`, `clip`.
 - Rounding: `floor`, `round`.
 - Ternary (if/else): `?`.
 - `sgn`: Returns the sign of a value (-1 if negative, 1 if positive, 0 if zero).
