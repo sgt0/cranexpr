@@ -4,7 +4,7 @@ pub(crate) mod visit;
 use crate::{
   errors::{CranexprError, CranexprResult},
   lexer::{TokenKind, tokenize_with_text},
-  parser::ast::{BinOp, Expr, UnOp},
+  parser::ast::{BinOp, Expr, TernaryOp, UnOp},
 };
 
 fn add_unary_op(stack: &mut Vec<Expr>, op: UnOp) -> CranexprResult<()> {
@@ -17,6 +17,14 @@ fn add_binary_op(stack: &mut Vec<Expr>, op: BinOp) -> CranexprResult<()> {
   let right = stack.pop().ok_or(CranexprError::StackUnderflow)?;
   let left = stack.pop().ok_or(CranexprError::StackUnderflow)?;
   stack.push(Expr::Binary(op, Box::new(left), Box::new(right)));
+  Ok(())
+}
+
+fn add_ternary_op(stack: &mut Vec<Expr>, op: TernaryOp) -> CranexprResult<()> {
+  let c = stack.pop().ok_or(CranexprError::StackUnderflow)?;
+  let b = stack.pop().ok_or(CranexprError::StackUnderflow)?;
+  let a = stack.pop().ok_or(CranexprError::StackUnderflow)?;
+  stack.push(Expr::Ternary(op, Box::new(a), Box::new(b), Box::new(c)));
   Ok(())
 }
 
@@ -99,6 +107,7 @@ pub(crate) fn parse_expr(expr: &str) -> CranexprResult<Expr> {
             "sin" => add_unary_op(&mut stack, UnOp::Sine),
             "tan" => add_unary_op(&mut stack, UnOp::Tangent),
             "cos" => add_unary_op(&mut stack, UnOp::Cosine),
+            "clip" => add_ternary_op(&mut stack, TernaryOp::Clip),
             _ => {
               stack.push(Expr::Ident(text.to_string()));
               Ok(())
@@ -183,5 +192,10 @@ mod tests {
   #[rstest]
   fn test_negative_literal() {
     assert_yaml_snapshot!(parse_expr("-4 -5 - 6 -").unwrap());
+  }
+
+  #[rstest]
+  fn test_clip() {
+    assert_yaml_snapshot!(parse_expr("x 16 235 clip").unwrap());
   }
 }

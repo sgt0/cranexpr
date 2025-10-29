@@ -484,6 +484,16 @@ mod tests {
   }
 
   #[rstest]
+  #[case("10 0 20 clip", 10.0)]
+  #[case("-10 0 20 clip", 0.0)]
+  #[case("30 0 20 clip", 20.0)]
+  #[case("0 0 20 clip", 0.0)]
+  #[case("20 0 20 clip", 20.0)]
+  fn test_clip(#[case] expr: &str, #[case] expected: f32) {
+    assert_relative_eq!(run_expr(expr), expected);
+  }
+
+  #[rstest]
   fn test_integer_format_clamp() {
     let x = [33839u16];
 

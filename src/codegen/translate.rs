@@ -4,7 +4,7 @@ use cranelift_module::{Linkage, Module};
 use crate::{
   codegen::compiler::FunctionCx,
   errors::CranexprError,
-  parser::ast::{BinOp, Expr, UnOp},
+  parser::ast::{BinOp, Expr, TernaryOp, UnOp},
 };
 
 pub(crate) fn translate_expr(
@@ -24,6 +24,20 @@ pub(crate) fn translate_expr(
       let lhs = translate_expr(fx, lhs)?;
       let rhs = translate_expr(fx, rhs)?;
       Ok(codegen_float_binop(fx, *op, lhs, rhs))
+    }
+    Expr::Ternary(op, a, b, c) => {
+      let a = translate_expr(fx, a)?;
+      let b = translate_expr(fx, b)?;
+      let c = translate_expr(fx, c)?;
+      Ok(match op {
+        TernaryOp::Clip => {
+          // clip(x, min, max) is equivalent to `max(min(x, max), min)`.
+          let min_val = b;
+          let max_val = c;
+          let min_result = fx.bcx.ins().fmin(a, max_val);
+          fx.bcx.ins().fmax(min_result, min_val)
+        }
+      })
     }
     Expr::Unary(op, x) => {
       let x = translate_expr(fx, x)?;
