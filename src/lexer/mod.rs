@@ -41,6 +41,10 @@ pub(crate) enum TokenKind {
   Gt,
   /// `%`
   Percent,
+  /// `!`
+  Bang,
+  /// `@`
+  At,
 
   /// Unknown token, not expected by the lexer.
   Unknown,
@@ -157,6 +161,8 @@ impl Cursor<'_> {
       '<' => TokenKind::Lt,
       '>' => TokenKind::Gt,
       '%' => TokenKind::Percent,
+      '!' => TokenKind::Bang,
+      '@' => TokenKind::At,
 
       _ => TokenKind::Unknown,
     };

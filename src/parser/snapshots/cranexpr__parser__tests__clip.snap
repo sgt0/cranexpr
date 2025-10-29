@@ -2,8 +2,8 @@
 source: src/parser/mod.rs
 expression: "parse_expr(\"x 16 235 clip\").unwrap()"
 ---
-Ternary:
-  - Clip
-  - Ident: x
-  - Lit: 16
-  - Lit: 235
+- Ternary:
+    - Clip
+    - Ident: x
+    - Lit: 16
+    - Lit: 235

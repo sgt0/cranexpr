@@ -12,6 +12,9 @@ pub enum CranexprError {
   #[error("Expression evaluates to nothing.")]
   ExpressionEvaluatesToNothing,
 
+  #[error("Expression does not evaluate to a single value.")]
+  ExpressionDoesNotEvaluateToSingleValue,
+
   #[error("Missing frame property name.")]
   MissingPropertyName,
 

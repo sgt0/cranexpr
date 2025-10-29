@@ -70,15 +70,31 @@ pub(crate) fn translate_expr(
         UnOp::Sqrt => fx.bcx.ins().sqrt(x),
       })
     }
-    Expr::Ident(name) => {
+
+    // TODO: globals and user variables should reference different underlying
+    // storage.
+    Expr::Ident(name) | Expr::Load(name) => {
       let variable = fx
         .variables
         .get(name)
         .ok_or_else(|| CranexprError::UndefinedVariable(name.clone()))?;
       Ok(fx.bcx.use_var(*variable))
     }
+
     Expr::IfElse(condition, then_body, else_body) => {
       translate_if_else(fx, condition, then_body, else_body)
+    }
+    Expr::Store(name, expr) => {
+      let value = translate_expr(fx, expr)?;
+      let variable = if let Some(variable) = fx.variables.get(name) {
+        *variable
+      } else {
+        let var = fx.bcx.declare_var(types::F32);
+        fx.variables.insert(name.clone(), var);
+        var
+      };
+      fx.bcx.def_var(variable, value);
+      Ok(value)
     }
   }
 }

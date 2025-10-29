@@ -1,0 +1,14 @@
+---
+source: src/parser/mod.rs
+expression: "parse_expr(\"x 2 / my_var! my_var@ my_var@ *\").unwrap()"
+---
+- Store:
+    - my_var
+    - Binary:
+        - Div
+        - Ident: x
+        - Lit: 2
+- Binary:
+    - Mul
+    - Load: my_var
+    - Load: my_var

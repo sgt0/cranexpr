@@ -28,7 +28,8 @@ fn add_ternary_op(stack: &mut Vec<Expr>, op: TernaryOp) -> CranexprResult<()> {
   Ok(())
 }
 
-pub(crate) fn parse_expr(expr: &str) -> CranexprResult<Expr> {
+/// Parses an expression into a sequence of ASTs.
+pub(crate) fn parse_expr(expr: &str) -> CranexprResult<Vec<Expr>> {
   let mut stack = Vec::new();
 
   // We don't filter out whitespace tokens because they're significant when it
@@ -91,6 +92,18 @@ pub(crate) fn parse_expr(expr: &str) -> CranexprResult<Expr> {
             .expect("attempt to swap out of bounds");
           let len = stack.len();
           stack.swap(idx, len - 1);
+        }
+        // `var!`: Pops the top value from the stack and stores it in a variable
+        // named `var`.
+        else if tokens.peek().is_some_and(|(k, _)| *k == TokenKind::Bang) {
+          tokens.next(); // Consume `!`.
+          let value = stack.pop().ok_or(CranexprError::StackUnderflow)?;
+          stack.push(Expr::Store(text.to_string(), Box::new(value)));
+        }
+        // `var@`: Pushes the value of the variable `var` onto the stack.
+        else if tokens.peek().is_some_and(|(k, _)| *k == TokenKind::At) {
+          tokens.next(); // Consume `@`.
+          stack.push(Expr::Load(text.to_string()));
         } else {
           match text {
             "abs" => add_unary_op(&mut stack, UnOp::Abs),
@@ -147,9 +160,23 @@ pub(crate) fn parse_expr(expr: &str) -> CranexprResult<Expr> {
     }
   }
 
-  stack
-    .pop()
-    .ok_or(CranexprError::ExpressionEvaluatesToNothing)
+  if let Some((last_expr, preceding_exprs)) = stack.split_last() {
+    // All expressions before the final one must be side effects.
+    for expr in preceding_exprs {
+      if !matches!(expr, Expr::Store(..)) {
+        return Err(CranexprError::ExpressionDoesNotEvaluateToSingleValue);
+      }
+    }
+
+    // Last expression must not be a side effect.
+    if matches!(last_expr, Expr::Store(..)) {
+      return Err(CranexprError::ExpressionEvaluatesToNothing);
+    }
+  } else {
+    return Err(CranexprError::ExpressionEvaluatesToNothing);
+  }
+
+  Ok(stack)
 }
 
 #[cfg(test)]
@@ -203,5 +230,10 @@ mod tests {
   #[rstest]
   fn test_atan2() {
     assert_yaml_snapshot!(parse_expr("y x atan2").unwrap());
+  }
+
+  #[rstest]
+  fn test_variables() {
+    assert_yaml_snapshot!(parse_expr("x 2 / my_var! my_var@ my_var@ *").unwrap());
   }
 }

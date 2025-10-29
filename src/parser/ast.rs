@@ -114,4 +114,10 @@ pub(crate) enum Expr {
 
   /// Access of a frame property (e.g. `x.PlaneStatsAverage`).
   Prop(String, String),
+
+  /// Store a value into a variable.
+  Store(String, Box<Self>),
+
+  /// Load a value from a variable.
+  Load(String),
 }

@@ -69,11 +69,11 @@ pub(crate) fn compile_jit(
   dst_type: PixelType,
   src_types: &[PixelType],
 ) -> Result<MainFunction, CranexprError> {
-  let tree = parser::parse_expr(input)?;
+  let ast = parser::parse_expr(input)?;
 
   let mut jit_module = create_jit_module();
 
-  let main_func_id = create_entry_fn(&mut jit_module, &tree, dst_type, src_types)?;
+  let main_func_id = create_entry_fn(&mut jit_module, &ast, dst_type, src_types)?;
   jit_module.finalize_definitions().unwrap();
   let finalized_main = jit_module.get_finalized_function(main_func_id);
   Ok(MainFunction::from_ptr(finalized_main))
@@ -81,7 +81,7 @@ pub(crate) fn compile_jit(
 
 fn create_entry_fn(
   m: &mut dyn Module,
-  tree: &Expr,
+  ast: &[Expr],
   dst_type: PixelType,
   src_types: &[PixelType],
 ) -> CranexprResult<FuncId> {
@@ -164,7 +164,17 @@ fn create_entry_fn(
         }
       }
 
-      let expr_val = translate_expr(fx, tree)?;
+      let expr_val = if let Some((last_expr, preceding_exprs)) = ast.split_last() {
+        // Evaluate all preceding expressions first for any side effects.
+        for expr in preceding_exprs {
+          translate_expr(fx, expr)?;
+        }
+
+        // Last expression is expected to evaluate to the final result.
+        translate_expr(fx, last_expr)?
+      } else {
+        return Err(CranexprError::ExpressionEvaluatesToNothing);
+      };
 
       // Convert output floats to integers if necessary.
       let expr_val = match dst_type {

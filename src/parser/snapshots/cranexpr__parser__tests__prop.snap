@@ -2,6 +2,6 @@
 source: src/parser/mod.rs
 expression: "parse_expr(\"x.PlaneStatsAverage\").unwrap()"
 ---
-Prop:
-  - x
-  - PlaneStatsAverage
+- Prop:
+    - x
+    - PlaneStatsAverage
