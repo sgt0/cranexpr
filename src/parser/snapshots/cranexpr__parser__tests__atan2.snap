@@ -1,0 +1,8 @@
+---
+source: src/parser/mod.rs
+expression: "parse_expr(\"y x atan2\").unwrap()"
+---
+Binary:
+  - Atan2
+  - Ident: y
+  - Ident: x

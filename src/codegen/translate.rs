@@ -176,6 +176,7 @@ fn codegen_float_binop(fx: &mut FunctionCx<'_, '_>, op: BinOp, lhs: Value, rhs: 
     }
     BinOp::Max => fx.bcx.ins().fmax(lhs, rhs),
     BinOp::Min => fx.bcx.ins().fmin(lhs, rhs),
+    BinOp::Atan2 => translate_float_intrinsic_call(fx, "atan2f", &[lhs, rhs]),
   }
 }
 

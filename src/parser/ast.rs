@@ -38,6 +38,10 @@ pub(crate) enum BinOp {
   /// The `min` operator (minimum)
   #[strum(serialize = "min")]
   Min,
+
+  /// The `atan2` operator
+  #[strum(serialize = "atan2")]
+  Atan2,
 }
 
 /// Unary operator.

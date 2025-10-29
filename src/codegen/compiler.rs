@@ -267,7 +267,7 @@ const fn clip_idx_to_shorthand(n: u8) -> Option<char> {
 
 #[cfg(test)]
 mod tests {
-  use std::slice;
+  use std::{f32::consts::PI, slice};
 
   use approx::assert_relative_eq;
   use rstest::rstest;
@@ -490,6 +490,19 @@ mod tests {
   #[case("0 0 20 clip", 0.0)]
   #[case("20 0 20 clip", 20.0)]
   fn test_clip(#[case] expr: &str, #[case] expected: f32) {
+    assert_relative_eq!(run_expr(expr), expected);
+  }
+
+  #[rstest]
+  #[case("0 1 atan2", 0.0)]
+  #[case("1 1 atan2", PI / 4.0)]
+  #[case("1 0 atan2", PI / 2.0)]
+  #[case("1 -1 atan2", 3.0 * PI / 4.0)]
+  #[case("0 -1 atan2", PI)]
+  #[case("-1 -1 atan2", -3.0 * PI / 4.0)]
+  #[case("-1 0 atan2", -PI / 2.0)]
+  #[case("-1 1 atan2", -PI / 4.0)]
+  fn test_atan2(#[case] expr: &str, #[case] expected: f32) {
     assert_relative_eq!(run_expr(expr), expected);
   }
 
