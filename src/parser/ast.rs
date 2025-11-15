@@ -86,7 +86,7 @@ pub(crate) enum UnOp {
 /// Ternary operator.
 #[derive(Clone, Copy, Debug, Display, EnumString, PartialEq, Serialize)]
 pub(crate) enum TernaryOp {
-  /// The `clip` operator (clamps a value to a range).
+  /// The `clip` or `clamp` operator (clamps a value to a range).
   #[strum(serialize = "clip")]
   Clip,
 }

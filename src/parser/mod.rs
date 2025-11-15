@@ -120,7 +120,7 @@ pub(crate) fn parse_expr(expr: &str) -> CranexprResult<Vec<Expr>> {
             "sin" => add_unary_op(&mut stack, UnOp::Sine),
             "tan" => add_unary_op(&mut stack, UnOp::Tangent),
             "cos" => add_unary_op(&mut stack, UnOp::Cosine),
-            "clip" => add_ternary_op(&mut stack, TernaryOp::Clip),
+            "clip" | "clamp" => add_ternary_op(&mut stack, TernaryOp::Clip),
             "atan2" => add_binary_op(&mut stack, BinOp::Atan2),
             _ => {
               stack.push(Expr::Ident(text.to_string()));
