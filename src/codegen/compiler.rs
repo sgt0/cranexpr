@@ -72,9 +72,9 @@ pub(crate) fn compile_jit(
   let ast = parser::parse_expr(input)?;
 
   let mut jit_module = create_jit_module();
-
   let main_func_id = create_entry_fn(&mut jit_module, &ast, dst_type, src_types)?;
   jit_module.finalize_definitions().unwrap();
+
   let finalized_main = jit_module.get_finalized_function(main_func_id);
   Ok(MainFunction::from_ptr(finalized_main))
 }
@@ -94,6 +94,8 @@ fn create_entry_fn(
       AbiParam::new(types::I64),   // Destination buffer length.
       AbiParam::new(pointer_type), // Sources buffer pointer.
       AbiParam::new(types::I64),   // Sources buffer length.
+      AbiParam::new(types::I64),   // Destination plane width.
+      AbiParam::new(types::I64),   // Destination plane height.
     ],
     returns: vec![],
     call_conv: m.target_config().default_call_conv,
@@ -116,9 +118,11 @@ fn create_entry_fn(
     bcx.switch_to_block(block);
     bcx.append_block_params_for_function_params(block);
 
-    let (dest_ptr, dest_len, src_ptrs, _src_len) = {
+    let (dest_ptr, dest_len, src_ptrs, _src_len, width, height) = {
       let params = bcx.block_params(block);
-      (params[0], params[1], params[2], params[3])
+      (
+        params[0], params[1], params[2], params[3], params[4], params[5],
+      )
     };
     let dest_ptr = Pointer::new(dest_ptr);
 
@@ -134,6 +138,10 @@ fn create_entry_fn(
       src_types: src_types.to_vec(),
       pointer_type,
     };
+
+    // Constants.
+    codegen_variable(&mut fx, "width", width);
+    codegen_variable(&mut fx, "height", height);
 
     codegen_for_loop(&mut fx, start_idx, dest_len, step, |fx, idx| {
       // Loop-variant variables.
@@ -275,6 +283,18 @@ const fn clip_idx_to_shorthand(n: u8) -> Option<char> {
   }
 }
 
+fn codegen_variable<K: Into<String>>(fx: &mut FunctionCx<'_, '_>, name: K, data: Value) {
+  let src_type = fx.bcx.func.dfg.value_type(data);
+  let var = fx.bcx.declare_var(types::F32);
+  let data = if src_type == types::F32 {
+    data
+  } else {
+    fx.bcx.ins().fcvt_from_uint(types::F32, data)
+  };
+  fx.bcx.def_var(var, data);
+  fx.variables.insert(name.into(), var);
+}
+
 #[cfg(test)]
 mod tests {
   use std::{f32::consts::PI, slice};
@@ -287,7 +307,7 @@ mod tests {
   fn run_expr(expr: &str) -> f32 {
     let compiled = compile_jit(expr, PixelType::F32, &[]).expect("should compile expr");
     let mut dst = vec![0.0];
-    unsafe { compiled.invoke(&mut dst, &[&[] as &[u8]]) };
+    unsafe { compiled.invoke(&mut dst, &[&[] as &[u8]], 0, 0) };
     dst[0]
   }
 
@@ -398,6 +418,8 @@ mod tests {
             y.len() * types::F32.bytes() as usize,
           ),
         ],
+        0,
+        0,
       );
     };
     assert_relative_eq!(actual[0], 20.0);
@@ -533,6 +555,8 @@ mod tests {
       compiled.invoke(
         &mut actual,
         &[slice::from_raw_parts(x.as_ptr().cast::<u8>(), x.len())],
+        0,
+        0,
       );
     };
     assert_eq!(actual[0], 65535);

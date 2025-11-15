@@ -230,6 +230,9 @@ impl Filter for CranexprFilter {
           .enumerate()
           .filter(|(_i, (plane_op, _expr))| **plane_op == PlaneOp::Process)
         {
+          let width = dst.frame_width(plane_idx as i32);
+          let height = dst.frame_height(plane_idx as i32);
+
           let expr = unsafe { expr.as_ref().unwrap_unchecked() };
 
           let src_slices = src.iter().map(|f| {
@@ -242,12 +245,19 @@ impl Filter for CranexprFilter {
           match self.vi.sample_type() {
             SampleType::Integer => match self.vi.format.bytes_per_sample {
               1 => unsafe {
-                expr.invoke(dst.as_mut_slice::<u8>(plane_idx as i32), src_slices.clone());
+                expr.invoke(
+                  dst.as_mut_slice::<u8>(plane_idx as i32),
+                  src_slices.clone(),
+                  width,
+                  height,
+                );
               },
               2 => unsafe {
                 expr.invoke(
                   dst.as_mut_slice::<u16>(plane_idx as i32),
                   src_slices.clone(),
+                  width,
+                  height,
                 );
               },
               _ => unreachable!(),
@@ -256,6 +266,8 @@ impl Filter for CranexprFilter {
               expr.invoke(
                 dst.as_mut_slice::<f32>(plane_idx as i32),
                 src_slices.clone(),
+                width,
+                height,
               );
             },
           }

@@ -4,7 +4,7 @@ pub mod pixel_type;
 pub mod pointer;
 pub mod translate;
 
-type MainFunc = unsafe extern "C" fn(*mut u8, i64, *const *const u8, i64);
+type MainFunc = unsafe extern "C" fn(*mut u8, i64, *const *const u8, i64, i64, i64);
 
 #[derive(Debug)]
 pub(crate) struct MainFunction {
@@ -17,7 +17,7 @@ impl MainFunction {
   }
 
   #[inline]
-  pub(crate) unsafe fn invoke<D, S, I>(&self, dst: &mut [D], srcs: I)
+  pub(crate) unsafe fn invoke<D, S, I>(&self, dst: &mut [D], srcs: I, width: i32, height: i32)
   where
     S: AsRef<[u8]>,
     I: IntoIterator<Item = S>,
@@ -32,6 +32,15 @@ impl MainFunction {
     let srcs_ptr = srcs_ptrs.as_ptr();
 
     let func = unsafe { std::mem::transmute::<*const u8, MainFunc>(self.ptr) };
-    unsafe { func(dst_ptr, dst_len, srcs_ptr.cast(), srcs_len) };
+    unsafe {
+      func(
+        dst_ptr,
+        dst_len,
+        srcs_ptr.cast(),
+        srcs_len,
+        i64::from(width),
+        i64::from(height),
+      );
+    };
   }
 }
