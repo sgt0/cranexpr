@@ -17,10 +17,10 @@ thiserror = "=2.0.17"
 vapours = "=0.2.3"
 vapoursynth4-rs = "=0.4.0"
 
-cranelift = "=0.125.3"
-cranelift-jit = "=0.125.3"
-cranelift-module = "=0.125.3"
-cranelift-native = "=0.125.3"
+cranelift = "=0.125.4"
+cranelift-jit = "=0.125.4"
+cranelift-module = "=0.125.4"
+cranelift-native = "=0.125.4"
 
 [dev-dependencies]
 approx = "=0.5.1"
