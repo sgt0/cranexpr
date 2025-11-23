@@ -148,7 +148,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v5.0.0
 
-      - uses: cargo-bins/cargo-binstall@ac8496113671719ef3f12282bc9f41d86322e0d7 # v1.16.0
+      - uses: cargo-bins/cargo-binstall@3fc81674af4165a753833a94cae9f91d8849049f # v1.16.2
 
       - run: cargo binstall --no-confirm cargo-shear
 
