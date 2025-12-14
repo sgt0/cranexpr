@@ -7,7 +7,7 @@ edition = "2024"
 crate-type = ["cdylib"]
 
 [dependencies]
-const-str = "=0.7.0"
+const-str = "=0.7.1"
 miette = "=7.6.0"
 nanoid = "=0.4.0"
 serde = { version = "=1.0.228", features = ["derive"] }
