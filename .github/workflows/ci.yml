@@ -64,7 +64,7 @@ jobs:
           RUSTFLAGS: -C target-cpu=${{ matrix.target-cpu }}
 
       - name: Attest build provenance
-        uses: actions/attest-build-provenance@v3.0.0
+        uses: actions/attest-build-provenance@00014ed6ed5efc5b1ab7f7f34a39eb55d41aa4f8 # v3.1.0
         if: ${{ github.event_name == 'push' }}
         with:
           subject-path: target/${{ matrix.target }}/release/*cranexpr.${{ matrix.ext }}
