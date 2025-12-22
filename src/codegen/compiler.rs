@@ -641,4 +641,15 @@ mod tests {
     };
     assert_eq!(actual[0], 65535);
   }
+
+  #[rstest]
+  #[case("5 3 bitand", 1.0)] // 101 & 011 = 001 (1)
+  #[case("5.2 2.8 bitand", 1.0)] // 5 & 3 = 1
+  #[case("6 3 bitor", 7.0)] // 110 | 011 = 111 (7)
+  #[case("6 3 bitxor", 5.0)] // 110 ^ 011 = 101 (5)
+  #[case("0 bitnot", -1.0)] // ~0 = -1
+  #[case("-1 bitnot", 0.0)] // ~-1 = 0
+  fn test_bitwise(#[case] expr: &str, #[case] expected: f32) {
+    assert_relative_eq!(run_expr(expr), expected);
+  }
 }

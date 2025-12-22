@@ -56,6 +56,12 @@ pub(crate) fn translate_expr(
         UnOp::Round => translate_float_intrinsic_call(fx, "roundf", &[x]),
         UnOp::Log => translate_float_intrinsic_call(fx, "logf", &[x]),
         UnOp::Neg => fx.bcx.ins().fneg(x),
+        UnOp::BitNot => {
+          let rounded = fx.bcx.ins().nearest(x);
+          let i = fx.bcx.ins().fcvt_to_sint(types::I32, rounded);
+          let res = fx.bcx.ins().bnot(i);
+          fx.bcx.ins().fcvt_from_sint(types::F32, res)
+        }
         UnOp::Not => {
           // A value is considered truthy if and only if it is greater than 0.
           // Therefore, logical inversion is equivalent to a value being less
@@ -300,6 +306,19 @@ fn codegen_float_binop(fx: &mut FunctionCx<'_, '_>, op: BinOp, lhs: Value, rhs: 
     BinOp::Max => fx.bcx.ins().fmax(lhs, rhs),
     BinOp::Min => fx.bcx.ins().fmin(lhs, rhs),
     BinOp::Atan2 => translate_float_intrinsic_call(fx, "atan2f", &[lhs, rhs]),
+    BinOp::BitAnd | BinOp::BitOr | BinOp::BitXor => {
+      let lhs_rounded = fx.bcx.ins().nearest(lhs);
+      let rhs_rounded = fx.bcx.ins().nearest(rhs);
+      let lhs_i = fx.bcx.ins().fcvt_to_sint(types::I32, lhs_rounded);
+      let rhs_i = fx.bcx.ins().fcvt_to_sint(types::I32, rhs_rounded);
+      let res_i = match op {
+        BinOp::BitAnd => fx.bcx.ins().band(lhs_i, rhs_i),
+        BinOp::BitOr => fx.bcx.ins().bor(lhs_i, rhs_i),
+        BinOp::BitXor => fx.bcx.ins().bxor(lhs_i, rhs_i),
+        _ => unreachable!(),
+      };
+      fx.bcx.ins().fcvt_from_sint(types::F32, res_i)
+    }
   }
 }
 
