@@ -9,6 +9,7 @@ plugin that allows one to evaluate an expression per pixel.
 - Arithmetic: `+`, `-`, `*`, `/`, `%`, `pow`, `exp`, `log`, `sqrt`.
 - Trigonometry: `sin`, `cos`, `tan`, `atan2`.
 - Comparison: `>`, `<`.
+- Bitwise: `bitand`, `bitor`, `bitxor`, `bitnot`.
 - Clamping: `min`, `max`, `clip` (alias: `clamp`).
 - Rounding: `floor`, `round`.
 - Ternary (if/else): `?`.

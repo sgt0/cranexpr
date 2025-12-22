@@ -44,6 +44,16 @@ pub(crate) enum BinOp {
   /// The `atan2` operator
   #[strum(serialize = "atan2")]
   Atan2,
+
+  /// Bitwise AND
+  #[strum(serialize = "bitand")]
+  BitAnd,
+  /// Bitwise OR
+  #[strum(serialize = "bitor")]
+  BitOr,
+  /// Bitwise XOR
+  #[strum(serialize = "bitxor")]
+  BitXor,
 }
 
 /// Unary operator.
@@ -52,6 +62,9 @@ pub(crate) enum UnOp {
   /// The `abs` operator (absolute value).
   #[strum(serialize = "abs")]
   Abs,
+  /// Bitwise NOT
+  #[strum(serialize = "bitnot")]
+  BitNot,
   /// The exponential function (`e^x`).
   #[strum(serialize = "exp")]
   Exp,
