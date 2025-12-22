@@ -1,6 +1,8 @@
 use serde::Serialize;
 use strum_macros::{Display, EnumString};
 
+use crate::BoundaryMode;
+
 /// Binary operator.
 #[derive(Clone, Copy, Debug, Display, EnumString, PartialEq, Serialize)]
 pub(crate) enum BinOp {
@@ -120,4 +122,19 @@ pub(crate) enum Expr {
 
   /// Load a value from a variable.
   Load(String),
+
+  /// Relative pixel access (e.g. `x[-1, 0]:c`).
+  RelAccess {
+    /// Clip identifier.
+    clip: String,
+
+    /// Relative X offset.
+    rel_x: i32,
+
+    /// Relative Y offset.
+    rel_y: i32,
+
+    /// Optional boundary mode override.
+    boundary_mode: Option<BoundaryMode>,
+  },
 }

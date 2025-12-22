@@ -36,6 +36,9 @@ pub enum CranexprError {
   #[error("Undefined variable '{0}'.")]
   UndefinedVariable(String),
 
+  #[error("Unrecognized boundary mode.")]
+  UnrecognizedBoundaryMode,
+
   #[error("Only clips with constant format and dimensions are allowed")]
   VariableFormat,
 }

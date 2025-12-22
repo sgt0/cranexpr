@@ -1,8 +1,15 @@
-use cranelift::{codegen::ir::BlockArg, prelude::*};
+use cranelift::{
+  codegen::ir::{BlockArg, immediates::Offset32},
+  prelude::*,
+};
 use cranelift_module::{Linkage, Module};
 
 use crate::{
-  codegen::compiler::FunctionCx,
+  codegen::{
+    compiler::{FunctionCx, SRC_MEMFLAGS, apply_boundary_mode},
+    pixel_type::PixelType,
+    pointer::Pointer,
+  },
   errors::CranexprError,
   parser::ast::{BinOp, Expr, TernaryOp, UnOp},
 };
@@ -96,7 +103,107 @@ pub(crate) fn translate_expr(
       fx.bcx.def_var(variable, value);
       Ok(value)
     }
+    Expr::RelAccess {
+      clip,
+      rel_x,
+      rel_y,
+      boundary_mode,
+    } => {
+      if let Some(existing) = fx.variables.get(&format!("{clip}[{rel_x},{rel_y}]")) {
+        return Ok(fx.bcx.use_var(*existing));
+      }
+
+      // Resolve clip name to clip index
+      let clip_idx = resolve_clip_name(clip, &fx.src_types)?;
+      let src_type = fx.src_types[clip_idx];
+
+      let x_var = fx
+        .variables
+        .get("X")
+        .ok_or_else(|| CranexprError::UndefinedVariable("X".to_string()))?;
+      let y_var = fx
+        .variables
+        .get("Y")
+        .ok_or_else(|| CranexprError::UndefinedVariable("Y".to_string()))?;
+
+      let x_coord = fx.bcx.use_var(*x_var);
+      let y_coord = fx.bcx.use_var(*y_var);
+
+      // Target coordinates.
+      let rel_x_val = fx.bcx.ins().iconst(types::I64, i64::from(*rel_x));
+      let rel_y_val = fx.bcx.ins().iconst(types::I64, i64::from(*rel_y));
+      let target_x = fx.bcx.ins().iadd(x_coord, rel_x_val);
+      let target_y = fx.bcx.ins().iadd(y_coord, rel_y_val);
+
+      // Boundary handling.
+      let boundary_mode = boundary_mode.unwrap_or(fx.boundary_mode);
+      let clamped_x = apply_boundary_mode(fx, target_x, fx.width, boundary_mode);
+      let clamped_y = apply_boundary_mode(fx, target_y, fx.height, boundary_mode);
+
+      // idx = y * width + x
+      let y_times_width = fx.bcx.ins().imul(clamped_y, fx.width);
+      let target_idx = fx.bcx.ins().iadd(y_times_width, clamped_x);
+
+      // Load source pointer for this clip.
+      let pointer_size = fx.pointer_type.bytes() as i32;
+      let src_ptr_val = fx
+        .src_clips
+        .offset(fx, Offset32::new(clip_idx as i32 * pointer_size))
+        .load(fx, fx.pointer_type, SRC_MEMFLAGS);
+      let src_ptr = Pointer::new(src_ptr_val);
+
+      // Calculate byte offset for the pixel.
+      let pixel_offset = fx.bcx.ins().imul_imm(target_idx, src_type.bytes() as i64);
+      let pixel_ptr = src_ptr.offset_value(fx, pixel_offset);
+
+      // Load pixel value.
+      let val = pixel_ptr.load(fx, src_type.into(), SRC_MEMFLAGS);
+
+      // Convert to float.
+      let val = match src_type {
+        PixelType::U8 | PixelType::U16 => fx.bcx.ins().fcvt_from_uint(types::F32, val),
+        PixelType::F32 => val,
+      };
+
+      let var = fx.bcx.declare_var(types::F32);
+      fx.variables.insert(format!("{clip}[{rel_x},{rel_y}]"), var);
+      fx.bcx.def_var(var, val);
+
+      Ok(fx.bcx.use_var(var))
+    }
   }
+}
+
+/// Resolves a clip name (e.g., "x", "y", "src0") to a clip index.
+fn resolve_clip_name(
+  clip: &str,
+  src_types: &[crate::codegen::pixel_type::PixelType],
+) -> Result<usize, CranexprError> {
+  // Check if it's a shorthand (x, y, z, a, b, ...)
+  if clip.len() == 1 {
+    let ch = clip.chars().next().unwrap();
+    if ('x'..='z').contains(&ch) {
+      let idx = (ch as u8 - b'x') as usize;
+      if idx < src_types.len() {
+        return Ok(idx);
+      }
+    } else if ch.is_ascii_lowercase() {
+      let idx = (ch as u8 - b'a' + 3) as usize;
+      if idx < src_types.len() {
+        return Ok(idx);
+      }
+    }
+  }
+
+  // Check if it's srcN format
+  if let Some(stripped) = clip.strip_prefix("src")
+    && let Ok(idx) = stripped.parse::<usize>()
+    && idx < src_types.len()
+  {
+    return Ok(idx);
+  }
+
+  Err(CranexprError::UndefinedVariable(clip.to_string()))
 }
 
 fn translate_if_else(

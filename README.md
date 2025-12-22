@@ -30,6 +30,13 @@ plugin that allows one to evaluate an expression per pixel.
   - `var!`: Pops the top value from the stack and stores it in a variable named
     `var`.
   - `var@`: Pushes the value of the variable `var` onto the stack.
+- Relative pixel access: `clip[relX, relY]:[mode]`.
+  - Accesses a pixel relative to the current coordinate (`X`, `Y`). `relX` and
+    `relY` must be integer constants.
+  - If no suffix is provided, the edge behavior is determined by the filter's
+    `boundary` parameter.
+    - `:c`: Forces clamped boundary.
+    - `:m`: Forces mirrored boundary.
 - Supports any number of input clips. `srcN` may be used to access the `N`-th
   input clip. Shorthand aliases `x`, `y`, `z`, `a`, `b`, `c`, etc. map to
   `src0`, `src1`, `src2`, `src3`, `src4`, `src5`, etc., up to `w` being `src25`.
@@ -42,6 +49,7 @@ cranexpr.Expr(
   clips: Sequence[vs.VideoNode],
   expr: SequenceNotStr[str],
   format: int | None = None,
+  boundary: Literal[0, 1] = 0,
 ) -> vs.VideoNode
 ```
 
@@ -52,3 +60,4 @@ cranexpr.Expr(
   expression will be applied to all planes by default.
 - `format` — By default the output format is the same as the first input clip's
   format. This can be overridden by setting this parameter.
+- `boundary` — Boundary mode. `0` for clamping, `1` for mirroring.

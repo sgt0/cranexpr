@@ -58,7 +58,6 @@ fn walk_expr<'a, V: Visitor<'a>>(visitor: &mut V, expr: &'a Expr) {
       visitor.visit_unary_op(op);
       visitor.visit_expr(operand);
     }
-    Expr::Lit(_) => {}
     Expr::Store(name, expr) => {
       visitor.visit_expr(expr);
       visitor.visit_store(name);
@@ -66,6 +65,7 @@ fn walk_expr<'a, V: Visitor<'a>>(visitor: &mut V, expr: &'a Expr) {
     Expr::Load(name) => {
       visitor.visit_load(name);
     }
+    Expr::Lit(_) | Expr::RelAccess { .. } => {}
   }
 }
 

@@ -1,9 +1,14 @@
+#[macro_use]
+extern crate num_derive;
+
 mod codegen;
 mod errors;
 mod lexer;
 mod parser;
 
 use const_str::cstr;
+use num_traits::FromPrimitive;
+use serde::Serialize;
 use std::{
   ffi::{CStr, c_void},
   ptr, slice,
@@ -32,6 +37,16 @@ enum PlaneOp {
   Process,
   Copy,
   Undefined,
+}
+
+/// Boundary handling mode.
+#[derive(Clone, Copy, Debug, FromPrimitive, Serialize)]
+pub(crate) enum BoundaryMode {
+  /// Clamped boundary.
+  Clamp = 0,
+
+  /// Mirrored boundary.
+  Mirror = 1,
 }
 
 struct CranexprFilter {
@@ -102,6 +117,12 @@ impl Filter for CranexprFilter {
       expr[i as usize] = expr[num_exprs as usize - 1];
     }
 
+    let Some(boundary_mode) =
+      BoundaryMode::from_i64(input.get_int(key!(c"boundary"), 0).unwrap_or(0))
+    else {
+      return Err(CranexprError::UnrecognizedBoundaryMode);
+    };
+
     let mut planes = [PlaneOp::Undefined; 3];
     let mut bytecode: [Option<MainFunction>; 3] = [None, None, None];
 
@@ -141,7 +162,12 @@ impl Filter for CranexprFilter {
         })
         .collect::<Vec<_>>();
 
-      bytecode[i] = Some(compile_jit(expr[i], dst_type, &src_types)?);
+      bytecode[i] = Some(compile_jit(
+        expr[i],
+        dst_type,
+        &src_types,
+        Some(boundary_mode),
+      )?);
     }
 
     let filter = Self {
@@ -282,7 +308,7 @@ impl Filter for CranexprFilter {
   }
 
   const NAME: &'static CStr = cstr!("Expr");
-  const ARGS: &'static CStr = cstr!("clips:vnode[];expr:data[];format:int:opt;");
+  const ARGS: &'static CStr = cstr!("clips:vnode[];expr:data[];format:int:opt;boundary:int:opt;");
   const RETURN_TYPE: &'static CStr = cstr!("clip:vnode;");
 }
 

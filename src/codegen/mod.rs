@@ -23,6 +23,9 @@ impl MainFunction {
     I: IntoIterator<Item = S>,
     I::IntoIter: ExactSizeIterator,
   {
+    debug_assert!(width > 0, "width must be greater than 0");
+    debug_assert!(height > 0, "height must be greater than 0");
+
     let dst_ptr = dst.as_mut_ptr().cast::<u8>();
     let dst_len = dst.len() as i64;
 
