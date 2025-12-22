@@ -10,6 +10,7 @@ use cranelift_jit::{JITBuilder, JITModule};
 use cranelift_module::{FuncId, Linkage, Module, ModuleError};
 use nanoid::nanoid;
 
+use crate::BoundaryMode;
 use crate::codegen::pointer::Pointer;
 use crate::codegen::translate::translate_expr;
 use crate::codegen::{MainFunction, pixel_type::PixelType};
@@ -17,7 +18,7 @@ use crate::errors::{CranexprError, CranexprResult};
 use crate::parser::ast::Expr;
 use crate::parser::{self};
 
-const SRC_MEMFLAGS: MemFlags = MemFlags::trusted().with_readonly().with_can_move();
+pub(crate) const SRC_MEMFLAGS: MemFlags = MemFlags::trusted().with_readonly().with_can_move();
 
 pub(crate) struct FunctionCx<'m, 'clif> {
   pub(crate) module: &'m mut dyn Module,
@@ -30,6 +31,13 @@ pub(crate) struct FunctionCx<'m, 'clif> {
   pub(crate) dst_type: PixelType,
   #[allow(dead_code)]
   pub(crate) src_types: Vec<PixelType>,
+
+  pub(crate) boundary_mode: BoundaryMode,
+
+  // For relative pixel access
+  pub(crate) src_clips: Pointer,
+  pub(crate) width: Value,
+  pub(crate) height: Value,
 }
 
 fn build_isa() -> Arc<dyn TargetIsa + 'static> {
@@ -68,11 +76,12 @@ pub(crate) fn compile_jit(
   input: &str,
   dst_type: PixelType,
   src_types: &[PixelType],
+  boundary_mode: Option<BoundaryMode>,
 ) -> Result<MainFunction, CranexprError> {
   let ast = parser::parse_expr(input)?;
 
   let mut jit_module = create_jit_module();
-  let main_func_id = create_entry_fn(&mut jit_module, &ast, dst_type, src_types)?;
+  let main_func_id = create_entry_fn(&mut jit_module, &ast, dst_type, src_types, boundary_mode)?;
   jit_module.finalize_definitions().unwrap();
 
   let finalized_main = jit_module.get_finalized_function(main_func_id);
@@ -84,6 +93,7 @@ fn create_entry_fn(
   ast: &[Expr],
   dst_type: PixelType,
   src_types: &[PixelType],
+  boundary_mode: Option<BoundaryMode>,
 ) -> CranexprResult<FuncId> {
   let pointer_type = m.target_config().pointer_type();
   let pointer_size = pointer_type.bytes() as i32;
@@ -137,6 +147,10 @@ fn create_entry_fn(
       dst_type,
       src_types: src_types.to_vec(),
       pointer_type,
+      boundary_mode: boundary_mode.unwrap_or(BoundaryMode::Clamp),
+      src_clips: Pointer::new(src_ptrs),
+      width,
+      height,
     };
 
     // Constants.
@@ -144,7 +158,14 @@ fn create_entry_fn(
     codegen_variable(&mut fx, "height", height);
 
     codegen_for_loop(&mut fx, start_idx, dest_len, step, |fx, idx| {
-      // Loop-variant variables.
+      // Set up loop-variant variables.
+
+      // X = idx % width, Y = idx / width
+      let x_coord = fx.bcx.ins().urem(idx, width);
+      let y_coord = fx.bcx.ins().udiv(idx, width);
+      codegen_variable(fx, "X", x_coord);
+      codegen_variable(fx, "Y", y_coord);
+
       for (var_idx, src_type) in src_types.iter().enumerate() {
         // srcN
         let src_ptr_val = Pointer::new(src_ptrs)
@@ -171,6 +192,8 @@ fn create_entry_fn(
           fx.variables.insert(shorthand.to_string(), var);
         }
       }
+
+      // Evaluate expressions.
 
       let expr_val = if let Some((last_expr, preceding_exprs)) = ast.split_last() {
         // Evaluate all preceding expressions first for any side effects.
@@ -285,14 +308,65 @@ const fn clip_idx_to_shorthand(n: u8) -> Option<char> {
 
 fn codegen_variable<K: Into<String>>(fx: &mut FunctionCx<'_, '_>, name: K, data: Value) {
   let src_type = fx.bcx.func.dfg.value_type(data);
-  let var = fx.bcx.declare_var(types::F32);
-  let data = if src_type == types::F32 {
-    data
-  } else {
-    fx.bcx.ins().fcvt_from_uint(types::F32, data)
-  };
+  let var = fx.bcx.declare_var(src_type);
   fx.bcx.def_var(var, data);
   fx.variables.insert(name.into(), var);
+}
+
+/// Applies boundary mode to a coordinate value.
+pub(crate) fn apply_boundary_mode(
+  fx: &mut FunctionCx<'_, '_>,
+  coord: Value,
+  max: Value,
+  mode: BoundaryMode,
+) -> Value {
+  match mode {
+    BoundaryMode::Clamp => {
+      // Clamp: clamp(coord, 0, max - 1)
+      let zero = fx.bcx.ins().iconst(types::I64, 0);
+      let one = fx.bcx.ins().iconst(types::I64, 1);
+      let max_minus_one = fx.bcx.ins().isub(max, one);
+
+      // First clamp to max-1
+      let is_too_large = fx
+        .bcx
+        .ins()
+        .icmp(IntCC::SignedGreaterThan, coord, max_minus_one);
+      let clamped_max = fx.bcx.ins().select(is_too_large, max_minus_one, coord);
+
+      // Then clamp to 0
+      let is_too_small = fx.bcx.ins().icmp(IntCC::SignedLessThan, clamped_max, zero);
+      fx.bcx.ins().select(is_too_small, zero, clamped_max)
+    }
+    BoundaryMode::Mirror => {
+      // Mirror: reflect at edges
+      // If coord < 0: mirror = -coord - 1
+      // If coord >= max: mirror = 2 * max - coord - 1
+      // Else: mirror = coord
+      let zero = fx.bcx.ins().iconst(types::I64, 0);
+      let one = fx.bcx.ins().iconst(types::I64, 1);
+
+      let is_negative = fx.bcx.ins().icmp(IntCC::SignedLessThan, coord, zero);
+      let is_too_large = fx
+        .bcx
+        .ins()
+        .icmp(IntCC::SignedGreaterThanOrEqual, coord, max);
+
+      // Calculate negative mirror: -coord - 1
+      let neg_mirror = fx.bcx.ins().isub(zero, coord);
+      let neg_mirror = fx.bcx.ins().isub(neg_mirror, one);
+
+      // Calculate positive mirror: 2 * max - coord - 1
+      let two = fx.bcx.ins().iconst(types::I64, 2);
+      let two_max = fx.bcx.ins().imul(max, two);
+      let pos_mirror = fx.bcx.ins().isub(two_max, coord);
+      let pos_mirror = fx.bcx.ins().isub(pos_mirror, one);
+
+      // Select based on conditions: first handle negative, then too large
+      let result = fx.bcx.ins().select(is_negative, neg_mirror, coord);
+      fx.bcx.ins().select(is_too_large, pos_mirror, result)
+    }
+  }
 }
 
 #[cfg(test)]
@@ -305,9 +379,9 @@ mod tests {
   use super::*;
 
   fn run_expr(expr: &str) -> f32 {
-    let compiled = compile_jit(expr, PixelType::F32, &[]).expect("should compile expr");
+    let compiled = compile_jit(expr, PixelType::F32, &[], None).expect("should compile expr");
     let mut dst = vec![0.0];
-    unsafe { compiled.invoke(&mut dst, &[&[] as &[u8]], 0, 0) };
+    unsafe { compiled.invoke(&mut dst, &[&[] as &[u8]], 100, 50) };
     dst[0]
   }
 
@@ -399,8 +473,13 @@ mod tests {
 
   #[rstest]
   fn test_variables() {
-    let compiled = compile_jit("x y +", PixelType::F32, &[PixelType::F32, PixelType::F32])
-      .expect("should compile expr");
+    let compiled = compile_jit(
+      "x y +",
+      PixelType::F32,
+      &[PixelType::F32, PixelType::F32],
+      None,
+    )
+    .expect("should compile expr");
 
     let mut actual = [0.0f32];
     let x = [3.0f32];
@@ -418,8 +497,8 @@ mod tests {
             y.len() * types::F32.bytes() as usize,
           ),
         ],
-        0,
-        0,
+        1,
+        1,
       );
     };
     assert_relative_eq!(actual[0], 20.0);
@@ -546,6 +625,7 @@ mod tests {
       "x 32768 / 0.86 pow 65535 *",
       PixelType::U16,
       &[PixelType::U16],
+      None,
     )
     .expect("should compile expr");
 
@@ -555,8 +635,8 @@ mod tests {
       compiled.invoke(
         &mut actual,
         &[slice::from_raw_parts(x.as_ptr().cast::<u8>(), x.len())],
-        0,
-        0,
+        1,
+        1,
       );
     };
     assert_eq!(actual[0], 65535);

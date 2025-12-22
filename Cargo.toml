@@ -10,6 +10,8 @@ crate-type = ["cdylib"]
 const-str = "=0.7.1"
 miette = "=7.6.0"
 nanoid = "=0.4.0"
+num-derive = "=0.4.2"
+num-traits = "=0.2.19"
 serde = { version = "=1.0.228", features = ["derive"] }
 strum = "=0.27.2"
 strum_macros = "=0.27.2"

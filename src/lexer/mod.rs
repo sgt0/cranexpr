@@ -45,6 +45,14 @@ pub(crate) enum TokenKind {
   Bang,
   /// `@`
   At,
+  /// `[`
+  OpenBracket,
+  /// `]`
+  CloseBracket,
+  /// `:`
+  Colon,
+  /// `,`
+  Comma,
 
   /// Unknown token, not expected by the lexer.
   Unknown,
@@ -163,6 +171,10 @@ impl Cursor<'_> {
       '%' => TokenKind::Percent,
       '!' => TokenKind::Bang,
       '@' => TokenKind::At,
+      '[' => TokenKind::OpenBracket,
+      ']' => TokenKind::CloseBracket,
+      ':' => TokenKind::Colon,
+      ',' => TokenKind::Comma,
 
       _ => TokenKind::Unknown,
     };
