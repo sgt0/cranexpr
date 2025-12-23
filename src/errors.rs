@@ -12,6 +12,12 @@ pub enum CranexprError {
   #[error("Compilation error: {0}")]
   CompilationError(String),
 
+  #[error("Attempt to drop out of bounds.")]
+  DropOutOfBounds,
+
+  #[error("Attempt to dup out of bounds.")]
+  DupOutOfBounds,
+
   #[error("Expression evaluates to nothing.")]
   ExpressionEvaluatesToNothing,
 
@@ -35,6 +41,9 @@ pub enum CranexprError {
 
   #[error("Stack underflow.")]
   StackUnderflow,
+
+  #[error("Attempt to swap out of bounds.")]
+  SwapOutOfBounds,
 
   #[error("Undefined variable '{0}'.")]
   UndefinedVariable(String),

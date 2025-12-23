@@ -200,7 +200,7 @@ pub(crate) fn parse_expr(expr: &str) -> CranexprResult<Vec<Expr>> {
           let new_len = stack
             .len()
             .checked_sub(steps)
-            .expect("attempt to drop out of bounds");
+            .ok_or(CranexprError::DropOutOfBounds)?;
           stack.truncate(new_len);
         }
         // Duplicates the topmost stack value.
@@ -213,8 +213,8 @@ pub(crate) fn parse_expr(expr: &str) -> CranexprResult<Vec<Expr>> {
           let idx = stack
             .len()
             .checked_sub(steps + 1)
-            .expect("attempt to dup out of bounds");
-          let to_dupe = stack.get(idx).expect("attempt to dup out of bounds");
+            .ok_or(CranexprError::DupOutOfBounds)?;
+          let to_dupe = stack.get(idx).ok_or(CranexprError::DupOutOfBounds)?;
           stack.push(to_dupe.clone());
         }
         // `swapN` allows a value N steps up in the stack to be swapped.
@@ -226,7 +226,7 @@ pub(crate) fn parse_expr(expr: &str) -> CranexprResult<Vec<Expr>> {
           let idx = stack
             .len()
             .checked_sub(steps + 1)
-            .expect("attempt to swap out of bounds");
+            .ok_or(CranexprError::SwapOutOfBounds)?;
           let len = stack.len();
           stack.swap(idx, len - 1);
         }
