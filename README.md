@@ -4,6 +4,26 @@ cranexpr is like [`std.Expr`](https://www.vapoursynth.com/doc/functions/video/ex
 but built on top of [Cranelift](https://cranelift.dev/). It's a [VapourSynth](https://www.vapoursynth.com/)
 plugin that allows one to evaluate an expression per pixel.
 
+## Examples
+
+Median of 3 clips:
+
+```python
+core.cranexpr.Expr([x, y, z], "x y min x y max z min max")
+```
+
+Flip a clip horizontally:
+
+```python
+core.cranexpr.Expr([x], "width X - 1 - Y x[]")
+```
+
+3x3 box blur:
+
+```python
+core.cranexpr.Expr([x], "x[-1,-1] x[0,-1] x[1,-1] x[-1,0] x x[1,0] x[-1,1] x[0,1] x[1,1] + + + + + + + + 9 /")
+```
+
 ## Features
 
 - Arithmetic: `+`, `-`, `*`, `/`, `%`, `pow`, `exp`, `log`, `sqrt`.
