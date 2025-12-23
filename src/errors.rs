@@ -42,6 +42,9 @@ pub enum CranexprError {
   #[error("Unrecognized boundary mode.")]
   UnrecognizedBoundaryMode,
 
+  #[error("Unrecognized token: {0}")]
+  UnrecognizedToken(String),
+
   #[error("Only clips with constant format and dimensions are allowed")]
   VariableFormat,
 }

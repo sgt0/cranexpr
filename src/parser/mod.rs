@@ -297,7 +297,7 @@ pub(crate) fn parse_expr(expr: &str) -> CranexprResult<Vec<Expr>> {
 
         stack.push(Expr::IfElse(Box::new(cond), Box::new(yes), Box::new(no)));
       }
-      _ => todo!("unhandled token: {text:?}"),
+      _ => return Err(CranexprError::UnrecognizedToken(text.to_string())),
     }
   }
 
