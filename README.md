@@ -38,6 +38,15 @@ plugin that allows one to evaluate an expression per pixel.
     `boundary` parameter.
     - `:c`: Forces clamped boundary.
     - `:m`: Forces mirrored boundary.
+- Absolute pixel access: `absX absY clip[]:[mode]`.
+  - Accesses a pixel at an absolute coordinate. It pops `absY` then `absX` from
+    the stack. These coordinates can be computed by expressions.
+  - If the coordinates are not integers, they will be rounded half to even.
+  - **Example:** `X 2 / Y x[]` reads the pixel at half the current X
+    coordinate from the first clip, using the default clamp mode.
+  - **Boundary Suffixes:**
+    - `:c`: Forces clamped boundary.
+    - `:m`: Forces mirrored boundary.
 - Supports any number of input clips. `srcN` may be used to access the `N`-th
   input clip. Shorthand aliases `x`, `y`, `z`, `a`, `b`, `c`, etc. map to
   `src0`, `src1`, `src2`, `src3`, `src4`, `src5`, etc., up to `w` being `src25`.

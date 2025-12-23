@@ -65,6 +65,10 @@ fn walk_expr<'a, V: Visitor<'a>>(visitor: &mut V, expr: &'a Expr) {
     Expr::Load(name) => {
       visitor.visit_load(name);
     }
+    Expr::AbsAccess { x, y, .. } => {
+      visitor.visit_expr(x);
+      visitor.visit_expr(y);
+    }
     Expr::Lit(_) | Expr::RelAccess { .. } => {}
   }
 }

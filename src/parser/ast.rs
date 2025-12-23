@@ -150,4 +150,21 @@ pub(crate) enum Expr {
     /// Optional boundary mode override.
     boundary_mode: Option<BoundaryMode>,
   },
+
+  /// Absolute pixel access (e.g. `x 100 y 200 src0[]:m`).
+  AbsAccess {
+    /// Clip identifier.
+    clip: String,
+
+    /// Absolute X coordinate.
+    x: Box<Self>,
+
+    /// Absolute Y coordinate.
+    y: Box<Self>,
+
+    /// Optional boundary mode override.
+    ///
+    /// If `None`, the filter's global boundary mode is used.
+    boundary_mode: Option<BoundaryMode>,
+  },
 }
