@@ -17,6 +17,7 @@ plugin that allows one to evaluate an expression per pixel.
 - Constants:
   - `width`: Width of the plane.
   - `height`: Height of the plane.
+  - `pi`: π.
 - Stack manipulation:
   - `dropN`, `drop`: drops the top N values from the stack. `drop` is equivalent
     to `drop1`.

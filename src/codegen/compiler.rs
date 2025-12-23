@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::f32::consts::PI;
 use std::sync::Arc;
 
 use cranelift::codegen::ir::immediates::Offset32;
@@ -156,6 +157,9 @@ fn create_entry_fn(
     // Constants.
     codegen_variable(&mut fx, "width", width);
     codegen_variable(&mut fx, "height", height);
+
+    let pi_val = fx.bcx.ins().f32const(PI);
+    codegen_variable(&mut fx, "pi", pi_val);
 
     codegen_for_loop(&mut fx, start_idx, dest_len, step, |fx, idx| {
       // Set up loop-variant variables.
@@ -432,6 +436,13 @@ mod tests {
   #[case("1 10 -1 100 200 ? ?", 10.0)]
   #[case("-1 10 1 100 200 ? ?", 100.0)]
   fn test_ternary(#[case] expr: &str, #[case] expected: f32) {
+    assert_relative_eq!(run_expr(expr), expected);
+  }
+
+  #[rstest]
+  #[case("pi", PI)]
+  #[case("pi 2 *", PI * 2.0)]
+  fn test_pi(#[case] expr: &str, #[case] expected: f32) {
     assert_relative_eq!(run_expr(expr), expected);
   }
 
