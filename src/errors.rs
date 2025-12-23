@@ -9,6 +9,9 @@ use thiserror::Error;
 /// Errors from cranexpr.
 #[derive(Debug, Diagnostic, Error)]
 pub enum CranexprError {
+  #[error("Compilation error: {0}")]
+  CompilationError(String),
+
   #[error("Expression evaluates to nothing.")]
   ExpressionEvaluatesToNothing,
 

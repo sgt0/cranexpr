@@ -91,7 +91,12 @@ pub(crate) fn translate_expr(
         .variables
         .get(name)
         .ok_or_else(|| CranexprError::UndefinedVariable(name.clone()))?;
-      Ok(fx.bcx.use_var(*variable))
+      let val = fx.bcx.use_var(*variable);
+      Ok(if fx.bcx.func.dfg.value_type(val) == types::I64 {
+        fx.bcx.ins().fcvt_from_uint(types::F32, val)
+      } else {
+        val
+      })
     }
 
     Expr::IfElse(condition, then_body, else_body) => {
@@ -108,6 +113,57 @@ pub(crate) fn translate_expr(
       };
       fx.bcx.def_var(variable, value);
       Ok(value)
+    }
+    Expr::AbsAccess {
+      clip,
+      x,
+      y,
+      boundary_mode,
+    } => {
+      let x_val = translate_expr(fx, x)?;
+      let y_val = translate_expr(fx, y)?;
+
+      // Resolve clip name to clip index.
+      let clip_idx = resolve_clip_name(clip, &fx.src_types)?;
+      let src_type = fx.src_types[clip_idx];
+
+      // Round and convert to integer.
+      let x_nearest = fx.bcx.ins().nearest(x_val);
+      let y_nearest = fx.bcx.ins().nearest(y_val);
+      let x_int = fx.bcx.ins().fcvt_to_sint(types::I64, x_nearest);
+      let y_int = fx.bcx.ins().fcvt_to_sint(types::I64, y_nearest);
+
+      // Boundary handling.
+      let boundary_mode = boundary_mode.unwrap_or(fx.boundary_mode);
+      let clamped_x = apply_boundary_mode(fx, x_int, fx.width, boundary_mode);
+      let clamped_y = apply_boundary_mode(fx, y_int, fx.height, boundary_mode);
+
+      // idx = y * width + x
+      let y_times_width = fx.bcx.ins().imul(clamped_y, fx.width);
+      let target_idx = fx.bcx.ins().iadd(y_times_width, clamped_x);
+
+      // Load source pointer for this clip.
+      let pointer_size = fx.pointer_type.bytes() as i32;
+      let src_ptr_val = fx
+        .src_clips
+        .offset(fx, Offset32::new(clip_idx as i32 * pointer_size))
+        .load(fx, fx.pointer_type, SRC_MEMFLAGS);
+      let src_ptr = Pointer::new(src_ptr_val);
+
+      // Calculate byte offset for the pixel.
+      let pixel_offset = fx.bcx.ins().imul_imm(target_idx, src_type.bytes() as i64);
+      let pixel_ptr = src_ptr.offset_value(fx, pixel_offset);
+
+      // Load pixel value.
+      let val = pixel_ptr.load(fx, src_type.into(), SRC_MEMFLAGS);
+
+      // Convert to float.
+      let val = match src_type {
+        PixelType::U8 | PixelType::U16 => fx.bcx.ins().fcvt_from_uint(types::F32, val),
+        PixelType::F32 => val,
+      };
+
+      Ok(val)
     }
     Expr::RelAccess {
       clip,

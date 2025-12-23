@@ -48,99 +48,141 @@ pub(crate) fn parse_expr(expr: &str) -> CranexprResult<Vec<Expr>> {
         stack.push(Expr::Lit(text.parse::<f32>().unwrap()));
       }
       TokenKind::Ident => {
-        // An identifier followed by an open bracket is relative pixel access.
+        // An identifier followed by an open bracket is relative or absolute pixel access.
         if tokens
           .peek()
           .is_some_and(|(k, _)| *k == TokenKind::OpenBracket)
         {
           tokens.next(); // Consume `[`.
 
-          // Parse relX (must be an integer literal).
-          let (rel_x_kind, rel_x_text) = tokens.next().ok_or(CranexprError::StackUnderflow)?;
-          let rel_x = match rel_x_kind {
-            TokenKind::Literal { .. } => rel_x_text
-              .parse::<i32>()
-              .map_err(|_| CranexprError::StackUnderflow)?,
-            TokenKind::Minus => {
-              // Negative integer literal.
-              let (lit_kind, lit_text) = tokens.next().ok_or(CranexprError::StackUnderflow)?;
-              if !matches!(lit_kind, TokenKind::Literal { .. }) {
+          // Check for empty brackets `[]` which indicates absolute access.
+          if tokens
+            .peek()
+            .is_some_and(|(k, _)| *k == TokenKind::CloseBracket)
+          {
+            tokens.next(); // Consume `]`.
+
+            // Parse optional boundary mode suffix.
+            let boundary_mode = if tokens.peek().is_some_and(|(k, _)| *k == TokenKind::Colon) {
+              tokens.next(); // Consume `:`.
+              // Skip whitespace.
+              while tokens
+                .peek()
+                .is_some_and(|(k, _)| *k == TokenKind::Whitespace)
+              {
+                tokens.next();
+              }
+              let (mode_kind, mode_text) = tokens.next().ok_or(CranexprError::StackUnderflow)?;
+              if mode_kind != TokenKind::Ident {
                 return Err(CranexprError::StackUnderflow);
               }
-              -(lit_text
-                .parse::<i32>()
-                .map_err(|_| CranexprError::StackUnderflow)?)
-            }
-            _ => return Err(CranexprError::StackUnderflow),
-          };
-
-          // Skip whitespace and optional comma.
-          while tokens
-            .peek()
-            .is_some_and(|(k, _)| matches!(k, TokenKind::Whitespace | TokenKind::Comma))
-          {
-            tokens.next();
-          }
-
-          // Parse relY.
-          let (rel_y_kind, rel_y_text) = tokens.next().ok_or(CranexprError::StackUnderflow)?;
-          let rel_y = match rel_y_kind {
-            TokenKind::Literal { .. } => rel_y_text
-              .parse::<i32>()
-              .map_err(|_| CranexprError::StackUnderflow)?,
-            TokenKind::Minus => {
-              let (lit_kind, lit_text) = tokens.next().ok_or(CranexprError::StackUnderflow)?;
-              if !matches!(lit_kind, TokenKind::Literal { .. }) {
-                return Err(CranexprError::StackUnderflow);
+              match mode_text {
+                "c" => Some(BoundaryMode::Clamp),
+                "m" => Some(BoundaryMode::Mirror),
+                _ => return Err(CranexprError::StackUnderflow),
               }
-              -(lit_text
+            } else {
+              Some(BoundaryMode::Clamp) // Default to clamp if no suffix
+            };
+
+            let y = stack.pop().ok_or(CranexprError::StackUnderflow)?;
+            let x = stack.pop().ok_or(CranexprError::StackUnderflow)?;
+
+            stack.push(Expr::AbsAccess {
+              clip: text.to_string(),
+              x: Box::new(x),
+              y: Box::new(y),
+              boundary_mode,
+            });
+          } else {
+            // Relative access parsing
+            // Parse relX (must be an integer literal).
+            let (rel_x_kind, rel_x_text) = tokens.next().ok_or(CranexprError::StackUnderflow)?;
+            let rel_x = match rel_x_kind {
+              TokenKind::Literal { .. } => rel_x_text
                 .parse::<i32>()
-                .map_err(|_| CranexprError::StackUnderflow)?)
+                .map_err(|_| CranexprError::StackUnderflow)?,
+              TokenKind::Minus => {
+                // Negative integer literal.
+                let (lit_kind, lit_text) = tokens.next().ok_or(CranexprError::StackUnderflow)?;
+                if !matches!(lit_kind, TokenKind::Literal { .. }) {
+                  return Err(CranexprError::StackUnderflow);
+                }
+                -(lit_text
+                  .parse::<i32>()
+                  .map_err(|_| CranexprError::StackUnderflow)?)
+              }
+              _ => return Err(CranexprError::StackUnderflow),
+            };
+
+            // Skip whitespace and optional comma.
+            while tokens
+              .peek()
+              .is_some_and(|(k, _)| matches!(k, TokenKind::Whitespace | TokenKind::Comma))
+            {
+              tokens.next();
             }
-            _ => return Err(CranexprError::StackUnderflow),
-          };
 
-          // Expect close bracket, but skip whitespace first.
-          while tokens
-            .peek()
-            .is_some_and(|(k, _)| *k == TokenKind::Whitespace)
-          {
-            tokens.next();
-          }
-          let (rbracket_kind, _) = tokens.next().ok_or(CranexprError::StackUnderflow)?;
-          if rbracket_kind != TokenKind::CloseBracket {
-            return Err(CranexprError::StackUnderflow);
-          }
+            // Parse relY.
+            let (rel_y_kind, rel_y_text) = tokens.next().ok_or(CranexprError::StackUnderflow)?;
+            let rel_y = match rel_y_kind {
+              TokenKind::Literal { .. } => rel_y_text
+                .parse::<i32>()
+                .map_err(|_| CranexprError::StackUnderflow)?,
+              TokenKind::Minus => {
+                let (lit_kind, lit_text) = tokens.next().ok_or(CranexprError::StackUnderflow)?;
+                if !matches!(lit_kind, TokenKind::Literal { .. }) {
+                  return Err(CranexprError::StackUnderflow);
+                }
+                -(lit_text
+                  .parse::<i32>()
+                  .map_err(|_| CranexprError::StackUnderflow)?)
+              }
+              _ => return Err(CranexprError::StackUnderflow),
+            };
 
-          // Parse optional boundary mode suffix.
-          let boundary_override = if tokens.peek().is_some_and(|(k, _)| *k == TokenKind::Colon) {
-            tokens.next(); // Consume `:`.
-            // Skip whitespace.
+            // Expect close bracket, but skip whitespace first.
             while tokens
               .peek()
               .is_some_and(|(k, _)| *k == TokenKind::Whitespace)
             {
               tokens.next();
             }
-            let (mode_kind, mode_text) = tokens.next().ok_or(CranexprError::StackUnderflow)?;
-            if mode_kind != TokenKind::Ident {
+            let (rbracket_kind, _) = tokens.next().ok_or(CranexprError::StackUnderflow)?;
+            if rbracket_kind != TokenKind::CloseBracket {
               return Err(CranexprError::StackUnderflow);
             }
-            match mode_text {
-              "c" => Some(BoundaryMode::Clamp),
-              "m" => Some(BoundaryMode::Mirror),
-              _ => return Err(CranexprError::StackUnderflow),
-            }
-          } else {
-            None
-          };
 
-          stack.push(Expr::RelAccess {
-            clip: text.to_string(),
-            rel_x,
-            rel_y,
-            boundary_mode: boundary_override,
-          });
+            // Parse optional boundary mode suffix.
+            let boundary_override = if tokens.peek().is_some_and(|(k, _)| *k == TokenKind::Colon) {
+              tokens.next(); // Consume `:`.
+              // Skip whitespace.
+              while tokens
+                .peek()
+                .is_some_and(|(k, _)| *k == TokenKind::Whitespace)
+              {
+                tokens.next();
+              }
+              let (mode_kind, mode_text) = tokens.next().ok_or(CranexprError::StackUnderflow)?;
+              if mode_kind != TokenKind::Ident {
+                return Err(CranexprError::StackUnderflow);
+              }
+              match mode_text {
+                "c" => Some(BoundaryMode::Clamp),
+                "m" => Some(BoundaryMode::Mirror),
+                _ => return Err(CranexprError::StackUnderflow),
+              }
+            } else {
+              None
+            };
+
+            stack.push(Expr::RelAccess {
+              clip: text.to_string(),
+              rel_x,
+              rel_y,
+              boundary_mode: boundary_override,
+            });
+          }
         }
         // An identifier followed by a dot is the start of frame property access.
         else if tokens.peek().is_some_and(|(k, _)| *k == TokenKind::Dot) {

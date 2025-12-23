@@ -239,7 +239,7 @@ fn create_entry_fn(
       ModuleError::Compilation(source) => pretty_error(&ctx.func, source),
       _ => err.to_string(),
     };
-    panic!("{err_msg}");
+    return Err(CranexprError::CompilationError(err_msg));
   }
 
   // println!("{}", ctx.func.display());
@@ -651,5 +651,59 @@ mod tests {
   #[case("-1 bitnot", 0.0)] // ~-1 = 0
   fn test_bitwise(#[case] expr: &str, #[case] expected: f32) {
     assert_relative_eq!(run_expr(expr), expected);
+  }
+
+  #[rstest]
+  fn test_abs_access() {
+    // 10 11 12
+    // 13 14 15
+    // 16 17 18
+    let x = [10u8, 11, 12, 13, 14, 15, 16, 17, 18];
+
+    let compiled =
+      compile_jit("1 1 x[]", PixelType::U8, &[PixelType::U8], None).expect("should compile expr");
+
+    let mut actual = [0u8; 9];
+    unsafe {
+      compiled.invoke(
+        &mut actual,
+        &[slice::from_raw_parts(x.as_ptr(), x.len())],
+        3,
+        3,
+      );
+    };
+    for v in actual {
+      assert_eq!(v, 14);
+    }
+  }
+
+  #[rstest]
+  fn test_horizontal_flip_u16() {
+    // 1 2 3
+    // 4 5 6
+    // 7 8 9
+    let x = [1u16, 2, 3, 4, 5, 6, 7, 8, 9];
+
+    // 3 2 1
+    // 6 5 4
+    // 9 8 7
+    let expected = [3u16, 2, 1, 6, 5, 4, 9, 8, 7];
+
+    let expr = "width X - 1 - Y x[]";
+
+    let compiled =
+      compile_jit(expr, PixelType::U16, &[PixelType::U16], None).expect("should compile expr");
+
+    let mut actual = [0u16; 9];
+    unsafe {
+      compiled.invoke(
+        &mut actual,
+        &[slice::from_raw_parts(x.as_ptr().cast::<u8>(), x.len() * 2)],
+        3,
+        3,
+      );
+    };
+
+    assert_eq!(actual, expected);
   }
 }
