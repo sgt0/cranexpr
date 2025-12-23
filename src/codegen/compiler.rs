@@ -107,6 +107,7 @@ fn create_entry_fn(
       AbiParam::new(types::I64),   // Sources buffer length.
       AbiParam::new(types::I64),   // Destination plane width.
       AbiParam::new(types::I64),   // Destination plane height.
+      AbiParam::new(types::I64),   // Current frame number (N).
     ],
     returns: vec![],
     call_conv: m.target_config().default_call_conv,
@@ -129,10 +130,10 @@ fn create_entry_fn(
     bcx.switch_to_block(block);
     bcx.append_block_params_for_function_params(block);
 
-    let (dest_ptr, dest_len, src_ptrs, _src_len, width, height) = {
+    let (dest_ptr, dest_len, src_ptrs, _src_len, width, height, n) = {
       let params = bcx.block_params(block);
       (
-        params[0], params[1], params[2], params[3], params[4], params[5],
+        params[0], params[1], params[2], params[3], params[4], params[5], params[6],
       )
     };
     let dest_ptr = Pointer::new(dest_ptr);
@@ -157,6 +158,7 @@ fn create_entry_fn(
     // Constants.
     codegen_variable(&mut fx, "width", width);
     codegen_variable(&mut fx, "height", height);
+    codegen_variable(&mut fx, "N", n);
 
     let pi_val = fx.bcx.ins().f32const(PI);
     codegen_variable(&mut fx, "pi", pi_val);
@@ -385,8 +387,15 @@ mod tests {
   fn run_expr(expr: &str) -> f32 {
     let compiled = compile_jit(expr, PixelType::F32, &[], None).expect("should compile expr");
     let mut dst = vec![0.0];
-    unsafe { compiled.invoke(&mut dst, &[&[] as &[u8]], 100, 50) };
+    unsafe { compiled.invoke(&mut dst, &[&[] as &[u8]], 100, 50, 0) };
     dst[0]
+  }
+
+  #[rstest]
+  #[case("N", 0.0)]
+  #[case("N 1 +", 1.0)]
+  fn test_n(#[case] expr: &str, #[case] expected: f32) {
+    assert_relative_eq!(run_expr(expr), expected);
   }
 
   #[rstest]
@@ -510,6 +519,7 @@ mod tests {
         ],
         1,
         1,
+        0,
       );
     };
     assert_relative_eq!(actual[0], 20.0);
@@ -657,6 +667,7 @@ mod tests {
         &[slice::from_raw_parts(x.as_ptr().cast::<u8>(), x.len())],
         1,
         1,
+        0,
       );
     };
     assert_eq!(actual[0], 65535);
@@ -690,6 +701,7 @@ mod tests {
         &[slice::from_raw_parts(x.as_ptr(), x.len())],
         3,
         3,
+        0,
       );
     };
     for v in actual {
@@ -721,6 +733,7 @@ mod tests {
         &[slice::from_raw_parts(x.as_ptr().cast::<u8>(), x.len() * 2)],
         3,
         3,
+        0,
       );
     };
 

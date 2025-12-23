@@ -276,6 +276,7 @@ impl Filter for CranexprFilter {
                   src_slices.clone(),
                   width,
                   height,
+                  n,
                 );
               },
               2 => unsafe {
@@ -284,6 +285,7 @@ impl Filter for CranexprFilter {
                   src_slices.clone(),
                   width,
                   height,
+                  n,
                 );
               },
               _ => unreachable!(),
@@ -294,6 +296,7 @@ impl Filter for CranexprFilter {
                 src_slices.clone(),
                 width,
                 height,
+                n,
               );
             },
           }
