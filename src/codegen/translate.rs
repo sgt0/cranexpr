@@ -1,3 +1,5 @@
+use std::f32::consts::PI;
+
 use cranelift::{
   codegen::ir::{BlockArg, immediates::Offset32},
   prelude::*,
@@ -362,7 +364,7 @@ fn codegen_float_binop(fx: &mut FunctionCx<'_, '_>, op: BinOp, lhs: Value, rhs: 
     }
     BinOp::Max => fx.bcx.ins().fmax(lhs, rhs),
     BinOp::Min => fx.bcx.ins().fmin(lhs, rhs),
-    BinOp::Atan2 => translate_float_intrinsic_call(fx, "atan2f", &[lhs, rhs]),
+    BinOp::Atan2 => codegen_atan2(fx, lhs, rhs),
     BinOp::BitAnd | BinOp::BitOr | BinOp::BitXor => {
       let lhs_rounded = fx.bcx.ins().nearest(lhs);
       let rhs_rounded = fx.bcx.ins().nearest(rhs);
@@ -383,4 +385,40 @@ fn bool_to_float(fx: &mut FunctionCx<'_, '_>, value: Value) -> Value {
   let one = fx.bcx.ins().f32const(1.0);
   let zero = fx.bcx.ins().f32const(0.0);
   fx.bcx.ins().select(value, one, zero)
+}
+
+// Benchmarked to be faster than calling the `atan2f` intrinsic.
+fn codegen_atan2(fx: &mut FunctionCx<'_, '_>, y: Value, x: Value) -> Value {
+  // Constants.
+  let zero = fx.bcx.ins().f32const(0.0);
+  let pi = fx.bcx.ins().f32const(PI);
+  let half_pi = fx.bcx.ins().f32const(PI / 2.0);
+
+  // atan(y/x)
+  let y_div_x = fx.bcx.ins().fdiv(y, x);
+  let atan_y_div_x = translate_float_intrinsic_call(fx, "atanf", &[y_div_x]);
+
+  // If x is negative, the result will be atan(y/x), then:
+  //   If y is positive, add pi.
+  //   If y is negative, subtract pi.
+  let signed_pi = fx.bcx.ins().fcopysign(pi, y);
+  let negative_x_result = fx.bcx.ins().fadd(atan_y_div_x, signed_pi);
+
+  // If x is zero, the result will be pi/2 with the sign of y.
+  let zero_x_result = fx.bcx.ins().fcopysign(half_pi, y);
+
+  // If x > 0: atan(y/x)
+  // Else if x < 0: negative_x_result
+  // Else (x = 0): zero_x_result
+  let x_gt_0 = fx.bcx.ins().fcmp(FloatCC::GreaterThan, x, zero);
+  let x_lt_0 = fx.bcx.ins().fcmp(FloatCC::LessThan, x, zero);
+  let inner_select = fx.bcx.ins().select(x_gt_0, atan_y_div_x, zero_x_result);
+  let result = fx.bcx.ins().select(x_lt_0, negative_x_result, inner_select);
+
+  // atan2(0, 0) is undefined.
+  let x_is_zero = fx.bcx.ins().fcmp(FloatCC::Equal, x, zero);
+  let y_is_zero = fx.bcx.ins().fcmp(FloatCC::Equal, y, zero);
+  let both_zero = fx.bcx.ins().band(x_is_zero, y_is_zero);
+
+  fx.bcx.ins().select(both_zero, zero, result)
 }

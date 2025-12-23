@@ -67,6 +67,7 @@ undocumented_unsafe_blocks = "allow"
 cast_possible_truncation = { level = "allow", priority = 1 }
 cast_possible_wrap = { level = "allow", priority = 1 }
 cast_sign_loss = { level = "allow", priority = 1 }
+many_single_char_names = { level = "allow", priority = 1 }
 module_name_repetitions = { level = "allow", priority = 1 }
 redundant_pub_crate = { level = "allow", priority = 1 }
 similar_names = { level = "allow", priority = 1 }
