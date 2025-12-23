@@ -33,6 +33,9 @@ pub(crate) enum BinOp {
   /// The `<` operator (less than)
   #[strum(serialize = "<")]
   Lt,
+  /// The `=` operator (equal to)
+  #[strum(serialize = "=")]
+  Eq,
 
   /// The `max` operator (maximum)
   #[strum(serialize = "max")]

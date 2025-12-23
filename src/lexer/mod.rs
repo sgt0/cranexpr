@@ -53,6 +53,8 @@ pub(crate) enum TokenKind {
   Colon,
   /// `,`
   Comma,
+  /// `=`
+  Eq,
 
   /// Unknown token, not expected by the lexer.
   Unknown,
@@ -175,6 +177,7 @@ impl Cursor<'_> {
       ']' => TokenKind::CloseBracket,
       ':' => TokenKind::Colon,
       ',' => TokenKind::Comma,
+      '=' => TokenKind::Eq,
 
       _ => TokenKind::Unknown,
     };
@@ -407,6 +410,7 @@ mod tests {
   #[rstest]
   fn test_binary_ops() {
     assert_yaml_snapshot!(lex("d e <"));
+    assert_yaml_snapshot!(lex("a b ="));
   }
 
   #[rstest]

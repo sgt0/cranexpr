@@ -616,6 +616,15 @@ mod tests {
   }
 
   #[rstest]
+  #[case("1 1 =", 1.0)]
+  #[case("1 0 =", 0.0)]
+  #[case("5 5 =", 1.0)]
+  #[case("5 6 =", 0.0)]
+  fn test_eq(#[case] expr: &str, #[case] expected: f32) {
+    assert_relative_eq!(run_expr(expr), expected);
+  }
+
+  #[rstest]
   #[case("0 1 atan2", 0.0)]
   #[case("1 1 atan2", PI / 4.0)]
   #[case("1 0 atan2", PI / 2.0)]

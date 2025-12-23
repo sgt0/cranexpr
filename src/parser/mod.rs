@@ -287,6 +287,7 @@ pub(crate) fn parse_expr(expr: &str) -> CranexprResult<Vec<Expr>> {
       TokenKind::Slash => add_binary_op(&mut stack, BinOp::Div)?,
       TokenKind::Gt => add_binary_op(&mut stack, BinOp::Gt)?,
       TokenKind::Lt => add_binary_op(&mut stack, BinOp::Lt)?,
+      TokenKind::Eq => add_binary_op(&mut stack, BinOp::Eq)?,
       TokenKind::Percent => add_binary_op(&mut stack, BinOp::Rem)?,
       TokenKind::Question => {
         // Ternary follows the pattern `A B C ?`, which evaluates to `B` if
@@ -371,6 +372,11 @@ mod tests {
   #[rstest]
   fn test_atan2() {
     assert_yaml_snapshot!(parse_expr("y x atan2").unwrap());
+  }
+
+  #[rstest]
+  fn test_eq_op() {
+    assert_yaml_snapshot!(parse_expr("x y =").unwrap());
   }
 
   #[rstest]
