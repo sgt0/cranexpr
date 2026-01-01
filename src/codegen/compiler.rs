@@ -319,62 +319,6 @@ fn codegen_variable<K: Into<String>>(fx: &mut FunctionCx<'_, '_>, name: K, data:
   fx.variables.insert(name.into(), var);
 }
 
-/// Applies boundary mode to a coordinate value.
-pub(crate) fn apply_boundary_mode(
-  fx: &mut FunctionCx<'_, '_>,
-  coord: Value,
-  max: Value,
-  mode: BoundaryMode,
-) -> Value {
-  match mode {
-    BoundaryMode::Clamp => {
-      // Clamp: clamp(coord, 0, max - 1)
-      let zero = fx.bcx.ins().iconst(types::I64, 0);
-      let one = fx.bcx.ins().iconst(types::I64, 1);
-      let max_minus_one = fx.bcx.ins().isub(max, one);
-
-      // First clamp to max-1
-      let is_too_large = fx
-        .bcx
-        .ins()
-        .icmp(IntCC::SignedGreaterThan, coord, max_minus_one);
-      let clamped_max = fx.bcx.ins().select(is_too_large, max_minus_one, coord);
-
-      // Then clamp to 0
-      let is_too_small = fx.bcx.ins().icmp(IntCC::SignedLessThan, clamped_max, zero);
-      fx.bcx.ins().select(is_too_small, zero, clamped_max)
-    }
-    BoundaryMode::Mirror => {
-      // Mirror: reflect at edges
-      // If coord < 0: mirror = -coord - 1
-      // If coord >= max: mirror = 2 * max - coord - 1
-      // Else: mirror = coord
-      let zero = fx.bcx.ins().iconst(types::I64, 0);
-      let one = fx.bcx.ins().iconst(types::I64, 1);
-
-      let is_negative = fx.bcx.ins().icmp(IntCC::SignedLessThan, coord, zero);
-      let is_too_large = fx
-        .bcx
-        .ins()
-        .icmp(IntCC::SignedGreaterThanOrEqual, coord, max);
-
-      // Calculate negative mirror: -coord - 1
-      let neg_mirror = fx.bcx.ins().isub(zero, coord);
-      let neg_mirror = fx.bcx.ins().isub(neg_mirror, one);
-
-      // Calculate positive mirror: 2 * max - coord - 1
-      let two = fx.bcx.ins().iconst(types::I64, 2);
-      let two_max = fx.bcx.ins().imul(max, two);
-      let pos_mirror = fx.bcx.ins().isub(two_max, coord);
-      let pos_mirror = fx.bcx.ins().isub(pos_mirror, one);
-
-      // Select based on conditions: first handle negative, then too large
-      let result = fx.bcx.ins().select(is_negative, neg_mirror, coord);
-      fx.bcx.ins().select(is_too_large, pos_mirror, result)
-    }
-  }
-}
-
 #[cfg(test)]
 mod tests {
   use std::{f32::consts::PI, slice};

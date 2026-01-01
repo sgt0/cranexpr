@@ -7,8 +7,9 @@ use cranelift::{
 use cranelift_module::{Linkage, Module};
 
 use crate::{
+  BoundaryMode,
   codegen::{
-    compiler::{FunctionCx, SRC_MEMFLAGS, apply_boundary_mode},
+    compiler::{FunctionCx, SRC_MEMFLAGS},
     pixel_type::PixelType,
     pointer::Pointer,
   },
@@ -137,8 +138,8 @@ pub(crate) fn translate_expr(
 
       // Boundary handling.
       let boundary_mode = boundary_mode.unwrap_or(fx.boundary_mode);
-      let clamped_x = apply_boundary_mode(fx, x_int, fx.width, boundary_mode);
-      let clamped_y = apply_boundary_mode(fx, y_int, fx.height, boundary_mode);
+      let clamped_x = codegen_boundary_mode(fx, x_int, fx.width, boundary_mode);
+      let clamped_y = codegen_boundary_mode(fx, y_int, fx.height, boundary_mode);
 
       // idx = y * width + x
       let y_times_width = fx.bcx.ins().imul(clamped_y, fx.width);
@@ -201,8 +202,8 @@ pub(crate) fn translate_expr(
 
       // Boundary handling.
       let boundary_mode = boundary_mode.unwrap_or(fx.boundary_mode);
-      let clamped_x = apply_boundary_mode(fx, target_x, fx.width, boundary_mode);
-      let clamped_y = apply_boundary_mode(fx, target_y, fx.height, boundary_mode);
+      let clamped_x = codegen_boundary_mode(fx, target_x, fx.width, boundary_mode);
+      let clamped_y = codegen_boundary_mode(fx, target_y, fx.height, boundary_mode);
 
       // idx = y * width + x
       let y_times_width = fx.bcx.ins().imul(clamped_y, fx.width);
@@ -395,14 +396,14 @@ fn codegen_atan2(fx: &mut FunctionCx<'_, '_>, y: Value, x: Value) -> Value {
   let half_pi = fx.bcx.ins().f32const(PI / 2.0);
 
   // atan(y/x)
-  let y_div_x = fx.bcx.ins().fdiv(y, x);
+  let y_div_x = codegen_float_binop(fx, BinOp::Div, y, x);
   let atan_y_div_x = translate_float_intrinsic_call(fx, "atanf", &[y_div_x]);
 
   // If x is negative, the result will be atan(y/x), then:
   //   If y is positive, add pi.
   //   If y is negative, subtract pi.
   let signed_pi = fx.bcx.ins().fcopysign(pi, y);
-  let negative_x_result = fx.bcx.ins().fadd(atan_y_div_x, signed_pi);
+  let negative_x_result = codegen_float_binop(fx, BinOp::Add, atan_y_div_x, signed_pi);
 
   // If x is zero, the result will be pi/2 with the sign of y.
   let zero_x_result = fx.bcx.ins().fcopysign(half_pi, y);
@@ -421,4 +422,59 @@ fn codegen_atan2(fx: &mut FunctionCx<'_, '_>, y: Value, x: Value) -> Value {
   let both_zero = fx.bcx.ins().band(x_is_zero, y_is_zero);
 
   fx.bcx.ins().select(both_zero, zero, result)
+}
+
+/// Applies boundary mode to a coordinate value.
+pub(crate) fn codegen_boundary_mode(
+  fx: &mut FunctionCx<'_, '_>,
+  coord: Value,
+  max: Value,
+  mode: BoundaryMode,
+) -> Value {
+  let zero = fx.bcx.ins().iconst(types::I64, 0);
+  let one = fx.bcx.ins().iconst(types::I64, 1);
+
+  match mode {
+    // Clamp: clamp(coord, 0, max - 1)
+    BoundaryMode::Clamp => {
+      let max_minus_one = fx.bcx.ins().isub(max, one);
+
+      // First clamp to max-1
+      let is_too_large = fx
+        .bcx
+        .ins()
+        .icmp(IntCC::SignedGreaterThan, coord, max_minus_one);
+      let clamped_max = fx.bcx.ins().select(is_too_large, max_minus_one, coord);
+
+      // Then clamp to 0
+      let is_too_small = fx.bcx.ins().icmp(IntCC::SignedLessThan, clamped_max, zero);
+      fx.bcx.ins().select(is_too_small, zero, clamped_max)
+    }
+
+    // Mirror: reflect at edges
+    // If coord < 0: mirror = -coord - 1
+    // If coord >= max: mirror = 2 * max - coord - 1
+    // Else: mirror = coord
+    BoundaryMode::Mirror => {
+      let is_negative = fx.bcx.ins().icmp(IntCC::SignedLessThan, coord, zero);
+      let is_too_large = fx
+        .bcx
+        .ins()
+        .icmp(IntCC::SignedGreaterThanOrEqual, coord, max);
+
+      // Calculate negative mirror: -coord - 1
+      let neg_mirror = fx.bcx.ins().isub(zero, coord);
+      let neg_mirror = fx.bcx.ins().isub(neg_mirror, one);
+
+      // Calculate positive mirror: 2 * max - coord - 1
+      let two = fx.bcx.ins().iconst(types::I64, 2);
+      let two_max = fx.bcx.ins().imul(max, two);
+      let pos_mirror = fx.bcx.ins().isub(two_max, coord);
+      let pos_mirror = fx.bcx.ins().isub(pos_mirror, one);
+
+      // Select based on conditions: first handle negative, then too large
+      let result = fx.bcx.ins().select(is_negative, neg_mirror, coord);
+      fx.bcx.ins().select(is_too_large, pos_mirror, result)
+    }
+  }
 }
