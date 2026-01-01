@@ -12,12 +12,13 @@ use cranelift_module::{FuncId, Linkage, Module, ModuleError};
 use nanoid::nanoid;
 
 use crate::BoundaryMode;
+use crate::codegen::MainFunction;
 use crate::codegen::pointer::Pointer;
 use crate::codegen::translate::translate_expr;
-use crate::codegen::{MainFunction, pixel_type::PixelType};
 use crate::errors::{CranexprError, CranexprResult};
 use crate::parser::ast::Expr;
 use crate::parser::{self};
+use crate::pixel::Pixel;
 
 pub(crate) const SRC_MEMFLAGS: MemFlags = MemFlags::trusted().with_readonly().with_can_move();
 
@@ -29,9 +30,9 @@ pub(crate) struct FunctionCx<'m, 'clif> {
   pub(crate) variables: HashMap<String, Variable>,
 
   #[allow(dead_code)]
-  pub(crate) dst_type: PixelType,
+  pub(crate) dst_type: Pixel,
   #[allow(dead_code)]
-  pub(crate) src_types: Vec<PixelType>,
+  pub(crate) src_types: Vec<Pixel>,
 
   pub(crate) boundary_mode: BoundaryMode,
 
@@ -75,8 +76,8 @@ fn create_jit_module() -> JITModule {
 
 pub(crate) fn compile_jit(
   input: &str,
-  dst_type: PixelType,
-  src_types: &[PixelType],
+  dst_type: Pixel,
+  src_types: &[Pixel],
   boundary_mode: Option<BoundaryMode>,
 ) -> Result<MainFunction, CranexprError> {
   let ast = parser::parse_expr(input)?;
@@ -92,8 +93,8 @@ pub(crate) fn compile_jit(
 fn create_entry_fn(
   m: &mut dyn Module,
   ast: &[Expr],
-  dst_type: PixelType,
-  src_types: &[PixelType],
+  dst_type: Pixel,
+  src_types: &[Pixel],
   boundary_mode: Option<BoundaryMode>,
 ) -> CranexprResult<FuncId> {
   let pointer_type = m.target_config().pointer_type();
@@ -186,8 +187,8 @@ fn create_entry_fn(
 
         // Convert to float.
         let val = match src_type {
-          PixelType::U8 | PixelType::U16 => fx.bcx.ins().fcvt_from_uint(types::F32, val),
-          PixelType::F32 => val,
+          Pixel::U8 | Pixel::U16 => fx.bcx.ins().fcvt_from_uint(types::F32, val),
+          Pixel::F32 => val,
         };
 
         // Store it in a variable.
@@ -215,7 +216,7 @@ fn create_entry_fn(
 
       // Convert output floats to integers if necessary.
       let expr_val = match dst_type {
-        PixelType::U8 | PixelType::U16 => {
+        Pixel::U8 | Pixel::U16 => {
           let zero = fx.bcx.ins().f32const(0.0);
           let peak_value = fx.bcx.ins().f32const(dst_type.peak_value());
 
@@ -224,7 +225,7 @@ fn create_entry_fn(
 
           fx.bcx.ins().fcvt_to_uint_sat(types::I32, clamped)
         }
-        PixelType::F32 => expr_val,
+        Pixel::F32 => expr_val,
       };
 
       let dest_offset = fx.bcx.ins().imul_imm(idx, dst_type.bytes() as i64);
@@ -324,15 +325,40 @@ mod tests {
   use std::{f32::consts::PI, slice};
 
   use approx::assert_relative_eq;
+  use ndarray::{Array2, array};
   use rstest::rstest;
 
   use super::*;
 
+  fn run_expr_ndarray<T>(expr: &str, src: &Array2<T>) -> Array2<T>
+  where
+    T: Into<Pixel> + Default,
+  {
+    let (height, width) = src.dim();
+    let pixel = T::default().into();
+
+    let compiled = compile_jit(expr, pixel, &[pixel], None).expect("should compile expr");
+
+    let mut dst = Array2::<T>::default((height, width));
+
+    let src_slice = src.as_slice_memory_order().expect("src not contiguous");
+    let dst_slice = dst.as_slice_memory_order_mut().expect("dst not contiguous");
+
+    let src_bytes_len = std::mem::size_of_val(src_slice);
+    let src_bytes =
+      unsafe { slice::from_raw_parts(src_slice.as_ptr().cast::<u8>(), src_bytes_len) };
+
+    unsafe {
+      compiled.invoke(dst_slice, &[src_bytes], width as i32, height as i32, 0);
+    }
+
+    dst
+  }
+
   fn run_expr(expr: &str) -> f32 {
-    let compiled = compile_jit(expr, PixelType::F32, &[], None).expect("should compile expr");
-    let mut dst = vec![0.0];
-    unsafe { compiled.invoke(&mut dst, &[&[] as &[u8]], 100, 50, 0) };
-    dst[0]
+    let src = array![[0.0f32]];
+    let dst = run_expr_ndarray(expr, &src);
+    dst[[0, 0]]
   }
 
   #[rstest]
@@ -437,13 +463,8 @@ mod tests {
 
   #[rstest]
   fn test_variables() {
-    let compiled = compile_jit(
-      "x y +",
-      PixelType::F32,
-      &[PixelType::F32, PixelType::F32],
-      None,
-    )
-    .expect("should compile expr");
+    let compiled = compile_jit("x y +", Pixel::F32, &[Pixel::F32, Pixel::F32], None)
+      .expect("should compile expr");
 
     let mut actual = [0.0f32];
     let x = [3.0f32];
@@ -597,8 +618,8 @@ mod tests {
 
     let compiled = compile_jit(
       "x 32768 / 0.86 pow 65535 *",
-      PixelType::U16,
-      &[PixelType::U16],
+      Pixel::U16,
+      &[Pixel::U16],
       None,
     )
     .expect("should compile expr");
@@ -633,24 +654,11 @@ mod tests {
     // 10 11 12
     // 13 14 15
     // 16 17 18
-    let x = [10u8, 11, 12, 13, 14, 15, 16, 17, 18];
+    let x = array![[10u8, 11, 12], [13, 14, 15], [16, 17, 18]];
 
-    let compiled =
-      compile_jit("1 1 x[]", PixelType::U8, &[PixelType::U8], None).expect("should compile expr");
+    let actual = run_expr_ndarray("1 1 x[]", &x);
 
-    let mut actual = [0u8; 9];
-    unsafe {
-      compiled.invoke(
-        &mut actual,
-        &[slice::from_raw_parts(x.as_ptr(), x.len())],
-        3,
-        3,
-        0,
-      );
-    };
-    for v in actual {
-      assert_eq!(v, 14);
-    }
+    assert_eq!(actual, Array2::from_elem((3, 3), 14u8));
   }
 
   #[rstest]
@@ -658,28 +666,16 @@ mod tests {
     // 1 2 3
     // 4 5 6
     // 7 8 9
-    let x = [1u16, 2, 3, 4, 5, 6, 7, 8, 9];
+    let x = array![[1u16, 2, 3], [4, 5, 6], [7, 8, 9]];
 
     // 3 2 1
     // 6 5 4
     // 9 8 7
-    let expected = [3u16, 2, 1, 6, 5, 4, 9, 8, 7];
+    let expected = array![[3, 2, 1], [6, 5, 4], [9, 8, 7]];
 
     let expr = "width X - 1 - Y x[]";
 
-    let compiled =
-      compile_jit(expr, PixelType::U16, &[PixelType::U16], None).expect("should compile expr");
-
-    let mut actual = [0u16; 9];
-    unsafe {
-      compiled.invoke(
-        &mut actual,
-        &[slice::from_raw_parts(x.as_ptr().cast::<u8>(), x.len() * 2)],
-        3,
-        3,
-        0,
-      );
-    };
+    let actual = run_expr_ndarray(expr, &x);
 
     assert_eq!(actual, expected);
   }

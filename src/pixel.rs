@@ -6,13 +6,13 @@ use vapours::{
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum PixelType {
+pub(crate) enum Pixel {
   U8,
   U16,
   F32,
 }
 
-impl PixelType {
+impl Pixel {
   pub(crate) const fn bytes(self) -> usize {
     match self {
       Self::U8 => 1,
@@ -30,12 +30,30 @@ impl PixelType {
   }
 }
 
-impl From<PixelType> for types::Type {
-  fn from(value: PixelType) -> Self {
+impl From<Pixel> for types::Type {
+  fn from(value: Pixel) -> Self {
     match value {
-      PixelType::U8 => types::I8,
-      PixelType::U16 => types::I16,
-      PixelType::F32 => types::F32,
+      Pixel::U8 => types::I8,
+      Pixel::U16 => types::I16,
+      Pixel::F32 => types::F32,
     }
+  }
+}
+
+impl From<u8> for Pixel {
+  fn from(_: u8) -> Self {
+    Self::U8
+  }
+}
+
+impl From<u16> for Pixel {
+  fn from(_: u16) -> Self {
+    Self::U16
+  }
+}
+
+impl From<f32> for Pixel {
+  fn from(_: f32) -> Self {
+    Self::F32
   }
 }

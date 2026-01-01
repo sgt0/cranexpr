@@ -5,6 +5,7 @@ mod codegen;
 mod errors;
 mod lexer;
 mod parser;
+mod pixel;
 
 use const_str::cstr;
 use num_traits::FromPrimitive;
@@ -28,8 +29,9 @@ use vapoursynth4_rs::{
 };
 
 use crate::{
-  codegen::{MainFunction, compiler::compile_jit, pixel_type::PixelType},
+  codegen::{MainFunction, compiler::compile_jit},
   errors::CranexprError,
+  pixel::Pixel,
 };
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -144,21 +146,21 @@ impl Filter for CranexprFilter {
 
       let dst_type = match vi.sample_type() {
         SampleType::Integer => match vi.format.bytes_per_sample {
-          1 => PixelType::U8,
-          2 => PixelType::U16,
+          1 => Pixel::U8,
+          2 => Pixel::U16,
           _ => unreachable!(),
         },
-        SampleType::Float => PixelType::F32,
+        SampleType::Float => Pixel::F32,
       };
       let src_types = video_infos
         .iter()
         .map(|vi| match vi.sample_type() {
           SampleType::Integer => match vi.format.bytes_per_sample {
-            1 => PixelType::U8,
-            2 => PixelType::U16,
+            1 => Pixel::U8,
+            2 => Pixel::U16,
             _ => unreachable!(),
           },
-          SampleType::Float => PixelType::F32,
+          SampleType::Float => Pixel::F32,
         })
         .collect::<Vec<_>>();
 

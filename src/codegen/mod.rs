@@ -1,6 +1,5 @@
 pub mod compiler;
 pub mod globals;
-pub mod pixel_type;
 pub mod pointer;
 pub mod translate;
 

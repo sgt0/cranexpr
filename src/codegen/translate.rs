@@ -10,11 +10,11 @@ use crate::{
   BoundaryMode,
   codegen::{
     compiler::{FunctionCx, SRC_MEMFLAGS},
-    pixel_type::PixelType,
     pointer::Pointer,
   },
   errors::CranexprError,
   parser::ast::{BinOp, Expr, TernaryOp, UnOp},
+  pixel::Pixel,
 };
 
 pub(crate) fn translate_expr(
@@ -162,8 +162,8 @@ pub(crate) fn translate_expr(
 
       // Convert to float.
       let val = match src_type {
-        PixelType::U8 | PixelType::U16 => fx.bcx.ins().fcvt_from_uint(types::F32, val),
-        PixelType::F32 => val,
+        Pixel::U8 | Pixel::U16 => fx.bcx.ins().fcvt_from_uint(types::F32, val),
+        Pixel::F32 => val,
       };
 
       Ok(val)
@@ -226,8 +226,8 @@ pub(crate) fn translate_expr(
 
       // Convert to float.
       let val = match src_type {
-        PixelType::U8 | PixelType::U16 => fx.bcx.ins().fcvt_from_uint(types::F32, val),
-        PixelType::F32 => val,
+        Pixel::U8 | Pixel::U16 => fx.bcx.ins().fcvt_from_uint(types::F32, val),
+        Pixel::F32 => val,
       };
 
       let var = fx.bcx.declare_var(types::F32);
@@ -240,10 +240,7 @@ pub(crate) fn translate_expr(
 }
 
 /// Resolves a clip name (e.g., "x", "y", "src0") to a clip index.
-fn resolve_clip_name(
-  clip: &str,
-  src_types: &[crate::codegen::pixel_type::PixelType],
-) -> Result<usize, CranexprError> {
+fn resolve_clip_name(clip: &str, src_types: &[Pixel]) -> Result<usize, CranexprError> {
   // Check if it's a shorthand (x, y, z, a, b, ...)
   if clip.len() == 1 {
     let ch = clip.chars().next().unwrap();
