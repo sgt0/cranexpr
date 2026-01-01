@@ -144,24 +144,10 @@ impl Filter for CranexprFilter {
         continue;
       }
 
-      let dst_type = match vi.sample_type() {
-        SampleType::Integer => match vi.format.bytes_per_sample {
-          1 => Pixel::U8,
-          2 => Pixel::U16,
-          _ => unreachable!(),
-        },
-        SampleType::Float => Pixel::F32,
-      };
+      let dst_type = Pixel::from_video_format(&vi);
       let src_types = video_infos
         .iter()
-        .map(|vi| match vi.sample_type() {
-          SampleType::Integer => match vi.format.bytes_per_sample {
-            1 => Pixel::U8,
-            2 => Pixel::U16,
-            _ => unreachable!(),
-          },
-          SampleType::Float => Pixel::F32,
-        })
+        .map(Pixel::from_video_format)
         .collect::<Vec<_>>();
 
       bytecode[i] = Some(compile_jit(

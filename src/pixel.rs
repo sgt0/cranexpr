@@ -4,6 +4,7 @@ use vapours::{
   generic::HoldsVideoFormat,
   vs_enums::{GRAY8, GRAY16, GRAYS},
 };
+use vapoursynth4_rs::SampleType;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Pixel {
@@ -13,6 +14,18 @@ pub(crate) enum Pixel {
 }
 
 impl Pixel {
+  /// Maps a video format to a [Pixel].
+  pub(crate) fn from_video_format<T: HoldsVideoFormat>(format: &T) -> Self {
+    match format.sample_type() {
+      SampleType::Integer => match format.video_format().bytes_per_sample {
+        1 => Self::U8,
+        2 => Self::U16,
+        _ => unreachable!(),
+      },
+      SampleType::Float => Self::F32,
+    }
+  }
+
   pub(crate) const fn bytes(self) -> usize {
     match self {
       Self::U8 => 1,
