@@ -19,7 +19,7 @@ thiserror = "=2.0.17"
 vapours = "=0.2.3"
 vapoursynth4-rs = "=0.4.0"
 
-cranelift = "=0.127.0"
+cranelift = "=0.127.1"
 cranelift-jit = "=0.127.0"
 cranelift-module = "=0.127.0"
 cranelift-native = "=0.127.0"
