@@ -27,7 +27,7 @@ cranelift-native = "=0.127.2"
 [dev-dependencies]
 approx = "=0.5.1"
 insta = { version = "=1.46.0", features = ["yaml"] }
-ndarray = "=0.17.1"
+ndarray = "=0.17.2"
 rstest = "=0.26.1"
 
 [patch.crates-io]
