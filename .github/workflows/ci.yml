@@ -104,13 +104,14 @@ jobs:
           toolchain: nightly
 
       - name: Install cargo-nextest
-        uses: taiki-e/install-action@nextest
+        uses: taiki-e/install-action@542cebaaed782771e619bd5609d97659d109c492 # v2.66.7
+        with:
+          tool: cargo-nextest
 
       - name: Run tests
         run: cargo nextest run --all-features --workspace
         env:
           RUSTFLAGS: -C target-cpu=${{ matrix.target-cpu }}
-
 
   clippy:
     runs-on: ubuntu-24.04
