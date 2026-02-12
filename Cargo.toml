@@ -22,7 +22,7 @@ vapoursynth4-rs = "=0.4.0"
 cranelift = "=0.128.1"
 cranelift-jit = "=0.128.1"
 cranelift-module = "=0.128.1"
-cranelift-native = "=0.128.1"
+cranelift-native = "=0.128.3"
 
 [dev-dependencies]
 approx = "=0.5.1"
