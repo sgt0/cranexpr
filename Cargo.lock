@@ -58,9 +58,9 @@ checksum = "812e12b5285cc515a9c72a5c1d3b6d46a19dac5acfef5265968c166106e31dd3"
 
 [[package]]
 name = "bon"
-version = "3.7.1"
+version = "3.8.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "537c317ddf588aab15c695bf92cf55dec159b93221c074180ca3e0e5a94da415"
+checksum = "234655ec178edd82b891e262ea7cf71f6584bcd09eff94db786be23f1821825c"
 dependencies = [
  "bon-macros",
  "rustversion",
@@ -68,9 +68,9 @@ dependencies = [
 
 [[package]]
 name = "bon-macros"
-version = "3.7.1"
+version = "3.8.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ca5abbf2d4a4c6896197c9de13d6d7cb7eff438c63dacde1dde980569cb00248"
+checksum = "89ec27229c38ed0eb3c0feee3d2c1d6a4379ae44f418a29a658890e062d8f365"
 dependencies = [
  "darling",
  "ident_case",
@@ -1083,7 +1083,7 @@ dependencies = [
 [[package]]
 name = "vapoursynth4-rs"
 version = "0.4.0"
-source = "git+https://github.com/inflation/vapoursynth4-rs?rev=5685213b75cef2c8ae3e49ed60c71cb7258bc1a5#5685213b75cef2c8ae3e49ed60c71cb7258bc1a5"
+source = "git+https://github.com/inflation/vapoursynth4-rs?rev=ae1ae21d292f9c8531afcedfc0aa56dda4050523#ae1ae21d292f9c8531afcedfc0aa56dda4050523"
 dependencies = [
  "bon",
  "thiserror",
@@ -1092,8 +1092,8 @@ dependencies = [
 
 [[package]]
 name = "vapoursynth4-sys"
-version = "0.3.1"
-source = "git+https://github.com/inflation/vapoursynth4-rs?rev=5685213b75cef2c8ae3e49ed60c71cb7258bc1a5#5685213b75cef2c8ae3e49ed60c71cb7258bc1a5"
+version = "0.3.2+R73"
+source = "git+https://github.com/inflation/vapoursynth4-rs?rev=ae1ae21d292f9c8531afcedfc0aa56dda4050523#ae1ae21d292f9c8531afcedfc0aa56dda4050523"
 
 [[package]]
 name = "wasi"

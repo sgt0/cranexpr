@@ -31,8 +31,8 @@ ndarray = "=0.17.2"
 rstest = "=0.26.1"
 
 [patch.crates-io]
-vapoursynth4-rs = { git = "https://github.com/inflation/vapoursynth4-rs", rev = "5685213b75cef2c8ae3e49ed60c71cb7258bc1a5" }
-vapoursynth4-sys = { git = "https://github.com/inflation/vapoursynth4-rs", rev = "5685213b75cef2c8ae3e49ed60c71cb7258bc1a5" }
+vapoursynth4-rs = { git = "https://github.com/inflation/vapoursynth4-rs", rev = "ae1ae21d292f9c8531afcedfc0aa56dda4050523" }
+vapoursynth4-sys = { git = "https://github.com/inflation/vapoursynth4-rs", rev = "ae1ae21d292f9c8531afcedfc0aa56dda4050523" }
 
 [profile.release]
 codegen-units = 1
