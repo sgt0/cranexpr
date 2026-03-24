@@ -6,6 +6,7 @@ mod errors;
 mod lexer;
 mod parser;
 mod pixel;
+mod prop_visitor;
 
 use const_str::cstr;
 use num_traits::FromPrimitive;
@@ -21,7 +22,7 @@ use vapoursynth4_rs::{
   declare_plugin,
   frame::{Frame, FrameContext, VideoFrame},
   key,
-  map::MapRef,
+  map::{Key, MapRef},
   node::{
     ActivationReason, Dependencies, Filter, FilterDependency, Node, RequestPattern, VideoNode,
   },
@@ -31,7 +32,9 @@ use vapoursynth4_rs::{
 use crate::{
   codegen::{MainFunction, compiler::compile_jit},
   errors::CranexprError,
+  parser::visit::Visitor,
   pixel::Pixel,
+  prop_visitor::PropVisitor,
 };
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -56,6 +59,8 @@ struct CranexprFilter {
   vi: VideoInfo,
   planes: [PlaneOp; 3],
   bytecode: [Option<MainFunction>; 3],
+  required_frame_props: [Vec<(usize, String)>; 3],
+  frame_prop_keys: [Vec<Key>; 3],
 }
 
 impl Filter for CranexprFilter {
@@ -127,6 +132,8 @@ impl Filter for CranexprFilter {
 
     let mut planes = [PlaneOp::Undefined; 3];
     let mut bytecode: [Option<MainFunction>; 3] = [None, None, None];
+    let mut required_frame_props: [Vec<(usize, String)>; 3] = [Vec::new(), Vec::new(), Vec::new()];
+    let mut frame_prop_keys: [Vec<Key>; 3] = [Vec::new(), Vec::new(), Vec::new()];
 
     for i in 0..vi.format.num_planes as usize {
       planes[i] = if expr[i].is_empty() {
@@ -144,6 +151,26 @@ impl Filter for CranexprFilter {
         continue;
       }
 
+      let ast = parser::parse_expr(expr[i])?;
+      let mut visitor = PropVisitor::new(num_inputs as usize);
+
+      for node in &ast {
+        visitor.visit_expr(node);
+      }
+
+      if let Some(err) = visitor.error {
+        return Err(err);
+      }
+
+      let required_props: Vec<(usize, String)> = visitor.props.into_iter().collect();
+      let mut prop_keys = Vec::with_capacity(required_props.len());
+      for (_, prop_name) in &required_props {
+        prop_keys.push(
+          Key::new(prop_name.as_str())
+            .map_err(|_| CranexprError::InvalidFramePropertyName(prop_name.clone()))?,
+        );
+      }
+
       let dst_type = Pixel::from_video_format(&vi);
       let src_types = video_infos
         .iter()
@@ -151,11 +178,15 @@ impl Filter for CranexprFilter {
         .collect::<Vec<_>>();
 
       bytecode[i] = Some(compile_jit(
-        expr[i],
+        &ast,
         dst_type,
         &src_types,
         Some(boundary_mode),
+        &required_props,
       )?);
+
+      required_frame_props[i] = required_props;
+      frame_prop_keys[i] = prop_keys;
     }
 
     let filter = Self {
@@ -163,6 +194,8 @@ impl Filter for CranexprFilter {
       vi: vi.clone(),
       planes,
       bytecode,
+      required_frame_props,
+      frame_prop_keys,
     };
 
     let deps = nodes
@@ -256,6 +289,27 @@ impl Filter for CranexprFilter {
             unsafe { slice::from_raw_parts(ptr, len) }
           });
 
+          let mut frame_props = Vec::with_capacity(self.required_frame_props[plane_idx].len());
+          for (i, (clip_idx, _)) in self.required_frame_props[plane_idx].iter().enumerate() {
+            let key = &self.frame_prop_keys[plane_idx][i];
+            let mut val = f32::NAN;
+            if let Some(props) = src[*clip_idx].properties() {
+              if let Ok(float_val) = props.get_float(key, 0) {
+                val = float_val as f32;
+              } else if let Ok(int_val) = props.get_int(key, 0) {
+                #[allow(clippy::cast_precision_loss)]
+                {
+                  val = int_val as f32;
+                }
+              } else if let Ok(bin_val) = props.get_binary(key, 0)
+                && !bin_val.is_empty()
+              {
+                val = f32::from(bin_val[0]);
+              }
+            }
+            frame_props.push(val);
+          }
+
           match self.vi.sample_type() {
             SampleType::Integer => match self.vi.format.bytes_per_sample {
               1 => unsafe {
@@ -265,6 +319,7 @@ impl Filter for CranexprFilter {
                   width,
                   height,
                   n,
+                  &frame_props,
                 );
               },
               2 => unsafe {
@@ -274,6 +329,7 @@ impl Filter for CranexprFilter {
                   width,
                   height,
                   n,
+                  &frame_props,
                 );
               },
               _ => unreachable!(),
@@ -285,6 +341,7 @@ impl Filter for CranexprFilter {
                 width,
                 height,
                 n,
+                &frame_props,
               );
             },
           }

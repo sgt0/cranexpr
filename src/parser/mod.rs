@@ -187,7 +187,9 @@ pub(crate) fn parse_expr(expr: &str) -> CranexprResult<Vec<Expr>> {
         // An identifier followed by a dot is the start of frame property access.
         else if tokens.peek().is_some_and(|(k, _)| *k == TokenKind::Dot) {
           tokens.next(); // Consume dot.
-          let (prop_kind, prop_text) = tokens.next().ok_or(CranexprError::MissingPropertyName)?;
+          let (prop_kind, prop_text) = tokens
+            .next()
+            .ok_or(CranexprError::MissingFramePropertyName)?;
           if prop_kind != TokenKind::Ident {
             return Err(CranexprError::PropertyNameNotAnIdentifier);
           }

@@ -24,8 +24,14 @@ pub enum CranexprError {
   #[error("Expression does not evaluate to a single value.")]
   ExpressionDoesNotEvaluateToSingleValue,
 
+  #[error("Invalid clip identifier '{0}'.")]
+  InvalidClipIdentifier(String),
+
+  #[error("Invalid frame property name '{0}'.")]
+  InvalidFramePropertyName(String),
+
   #[error("Missing frame property name.")]
-  MissingPropertyName,
+  MissingFramePropertyName,
 
   #[error("More expressions given than there are planes.")]
   MoreExpressionsThanPlanes,
