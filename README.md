@@ -53,6 +53,11 @@ core.cranexpr.Expr([x], "x[-1,-1] x[0,-1] x[1,-1] x[-1,0] x x[1,0] x[-1,1] x[0,1
   - `var!`: Pops the top value from the stack and stores it in a variable named
     `var`.
   - `var@`: Pushes the value of the variable `var` onto the stack.
+- Frame property access: `clip.PropertyName`.
+  - Accesses a numeric frame property from the given clip.
+  - If the property is missing, its value will be `NaN`.
+  - If the property is not a numeric frame property, its value will be the first
+    byte.
 - Relative pixel access: `clip[relX, relY]:[mode]`.
   - Accesses a pixel relative to the current coordinate (`X`, `Y`). `relX` and
     `relY` must be integer constants.

@@ -3,7 +3,8 @@ pub mod globals;
 pub mod pointer;
 pub mod translate;
 
-type MainFunc = unsafe extern "C" fn(*mut u8, i64, *const *const u8, i64, i64, i64, i64);
+type MainFunc =
+  unsafe extern "C" fn(*mut u8, i64, *const *const u8, i64, i64, i64, i64, *const f32);
 
 #[derive(Debug)]
 pub(crate) struct MainFunction {
@@ -23,6 +24,7 @@ impl MainFunction {
     width: i32,
     height: i32,
     n: i32,
+    frame_props: &[f32],
   ) where
     S: AsRef<[u8]>,
     I: IntoIterator<Item = S>,
@@ -39,6 +41,12 @@ impl MainFunction {
     let srcs_ptrs: Vec<*const u8> = srcs_iter.map(|s| s.as_ref().as_ptr()).collect();
     let srcs_ptr = srcs_ptrs.as_ptr();
 
+    let frame_props_ptr = if frame_props.is_empty() {
+      std::ptr::null()
+    } else {
+      frame_props.as_ptr()
+    };
+
     let func = unsafe { std::mem::transmute::<*const u8, MainFunc>(self.ptr) };
     unsafe {
       func(
@@ -49,6 +57,7 @@ impl MainFunction {
         i64::from(width),
         i64::from(height),
         i64::from(n),
+        frame_props_ptr,
       );
     };
   }

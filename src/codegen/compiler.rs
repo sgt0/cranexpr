@@ -17,10 +17,10 @@ use crate::codegen::pointer::Pointer;
 use crate::codegen::translate::translate_expr;
 use crate::errors::{CranexprError, CranexprResult};
 use crate::parser::ast::Expr;
-use crate::parser::{self};
 use crate::pixel::Pixel;
 
 pub(crate) const SRC_MEMFLAGS: MemFlags = MemFlags::trusted().with_readonly().with_can_move();
+const FRAME_PROP_MEMFLAGS: MemFlags = MemFlags::trusted().with_readonly().with_can_move();
 
 pub(crate) struct FunctionCx<'m, 'clif> {
   pub(crate) module: &'m mut dyn Module,
@@ -75,15 +75,21 @@ fn create_jit_module() -> JITModule {
 }
 
 pub(crate) fn compile_jit(
-  input: &str,
+  ast: &[Expr],
   dst_type: Pixel,
   src_types: &[Pixel],
   boundary_mode: Option<BoundaryMode>,
+  required_frame_props: &[(usize, String)],
 ) -> Result<MainFunction, CranexprError> {
-  let ast = parser::parse_expr(input)?;
-
   let mut jit_module = create_jit_module();
-  let main_func_id = create_entry_fn(&mut jit_module, &ast, dst_type, src_types, boundary_mode)?;
+  let main_func_id = create_entry_fn(
+    &mut jit_module,
+    ast,
+    dst_type,
+    src_types,
+    boundary_mode,
+    required_frame_props,
+  )?;
   jit_module.finalize_definitions().unwrap();
 
   let finalized_main = jit_module.get_finalized_function(main_func_id);
@@ -96,6 +102,7 @@ fn create_entry_fn(
   dst_type: Pixel,
   src_types: &[Pixel],
   boundary_mode: Option<BoundaryMode>,
+  required_frame_props: &[(usize, String)],
 ) -> CranexprResult<FuncId> {
   let pointer_type = m.target_config().pointer_type();
   let pointer_size = pointer_type.bytes() as i32;
@@ -109,6 +116,7 @@ fn create_entry_fn(
       AbiParam::new(types::I64),   // Destination plane width.
       AbiParam::new(types::I64),   // Destination plane height.
       AbiParam::new(types::I64),   // Current frame number (N).
+      AbiParam::new(pointer_type), // Frame properties array pointer.
     ],
     returns: vec![],
     call_conv: m.target_config().default_call_conv,
@@ -131,10 +139,10 @@ fn create_entry_fn(
     bcx.switch_to_block(block);
     bcx.append_block_params_for_function_params(block);
 
-    let (dest_ptr, dest_len, src_ptrs, _src_len, width, height, n) = {
+    let (dest_ptr, dest_len, src_ptrs, _src_len, width, height, n, props_ptr) = {
       let params = bcx.block_params(block);
       (
-        params[0], params[1], params[2], params[3], params[4], params[5], params[6],
+        params[0], params[1], params[2], params[3], params[4], params[5], params[6], params[7],
       )
     };
     let dest_ptr = Pointer::new(dest_ptr);
@@ -163,6 +171,21 @@ fn create_entry_fn(
 
     let pi_val = fx.bcx.ins().f32const(PI);
     codegen_variable(&mut fx, "pi", pi_val);
+
+    // Frame properties.
+    let props_ptr = Pointer::new(props_ptr);
+    for (i, (clip_idx, prop_name)) in required_frame_props.iter().enumerate() {
+      let offset = Offset32::new((i * size_of::<f32>()) as i32);
+      let val = props_ptr
+        .offset(&mut fx, offset)
+        .load(&mut fx, types::F32, FRAME_PROP_MEMFLAGS);
+
+      let var = fx.bcx.declare_var(types::F32);
+      fx.bcx.def_var(var, val);
+
+      fx.variables
+        .insert(format!("prop_{clip_idx}_{prop_name}"), var);
+    }
 
     codegen_for_loop(&mut fx, start_idx, dest_len, step, |fx, idx| {
       // Set up loop-variant variables.
@@ -195,9 +218,6 @@ fn create_entry_fn(
         let var = fx.bcx.declare_var(types::F32);
         fx.bcx.def_var(var, val);
         fx.variables.insert(format!("src{var_idx}"), var);
-        if let Some(shorthand) = clip_idx_to_shorthand(var_idx as u8) {
-          fx.variables.insert(shorthand.to_string(), var);
-        }
       }
 
       // Evaluate expressions.
@@ -305,14 +325,6 @@ fn codegen_for_loop(
   Ok(())
 }
 
-const fn clip_idx_to_shorthand(n: u8) -> Option<char> {
-  match n {
-    0..=2 => Some((b'x' + n) as char),
-    3..=25 => Some((b'a' + (n - 3)) as char),
-    _ => None,
-  }
-}
-
 fn codegen_variable<K: Into<String>>(fx: &mut FunctionCx<'_, '_>, name: K, data: Value) {
   let src_type = fx.bcx.func.dfg.value_type(data);
   let var = fx.bcx.declare_var(src_type);
@@ -329,15 +341,17 @@ mod tests {
   use rstest::rstest;
 
   use super::*;
+  use crate::parser;
 
   fn run_expr_ndarray<T>(expr: &str, src: &Array2<T>) -> Array2<T>
   where
     T: Into<Pixel> + Default,
   {
+    let ast = parser::parse_expr(expr).unwrap();
     let (height, width) = src.dim();
     let pixel = T::default().into();
 
-    let compiled = compile_jit(expr, pixel, &[pixel], None).expect("should compile expr");
+    let compiled = compile_jit(&ast, pixel, &[pixel], None, &[]).expect("should compile expr");
 
     let mut dst = Array2::<T>::default((height, width));
 
@@ -349,7 +363,7 @@ mod tests {
       unsafe { slice::from_raw_parts(src_slice.as_ptr().cast::<u8>(), src_bytes_len) };
 
     unsafe {
-      compiled.invoke(dst_slice, &[src_bytes], width as i32, height as i32, 0);
+      compiled.invoke(dst_slice, &[src_bytes], width as i32, height as i32, 0, &[]);
     }
 
     dst
@@ -463,7 +477,8 @@ mod tests {
 
   #[rstest]
   fn test_variables() {
-    let compiled = compile_jit("x y +", Pixel::F32, &[Pixel::F32, Pixel::F32], None)
+    let ast = parser::parse_expr("x y +").unwrap();
+    let compiled = compile_jit(&ast, Pixel::F32, &[Pixel::F32, Pixel::F32], None, &[])
       .expect("should compile expr");
 
     let mut actual = [0.0f32];
@@ -485,9 +500,53 @@ mod tests {
         1,
         1,
         0,
+        &[],
       );
     };
     assert_relative_eq!(actual[0], 20.0);
+  }
+
+  #[rstest]
+  fn test_properties() {
+    let ast = parser::parse_expr("x.PlaneStatsAverage y.PlaneStatsAverage + x *").unwrap();
+    let required_props = vec![
+      (0, "PlaneStatsAverage".to_string()),
+      (1, "PlaneStatsAverage".to_string()),
+    ];
+    let compiled = compile_jit(
+      &ast,
+      Pixel::F32,
+      &[Pixel::F32, Pixel::F32],
+      None,
+      &required_props,
+    )
+    .expect("should compile expr");
+
+    let mut actual = [0.0f32];
+    let x = [3.0f32];
+    let y = [17.0f32];
+    let frame_props = [0.5f32, 1.5f32];
+
+    unsafe {
+      compiled.invoke(
+        &mut actual,
+        &[
+          slice::from_raw_parts(
+            x.as_ptr().cast::<u8>(),
+            x.len() * types::F32.bytes() as usize,
+          ),
+          slice::from_raw_parts(
+            y.as_ptr().cast::<u8>(),
+            y.len() * types::F32.bytes() as usize,
+          ),
+        ],
+        1,
+        1,
+        0,
+        &frame_props,
+      );
+    };
+    assert_relative_eq!(actual[0], 6.0);
   }
 
   #[rstest]
@@ -615,14 +674,10 @@ mod tests {
   #[rstest]
   fn test_integer_format_clamp() {
     let x = [33839u16];
+    let ast = parser::parse_expr("x 32768 / 0.86 pow 65535 *").unwrap();
 
-    let compiled = compile_jit(
-      "x 32768 / 0.86 pow 65535 *",
-      Pixel::U16,
-      &[Pixel::U16],
-      None,
-    )
-    .expect("should compile expr");
+    let compiled =
+      compile_jit(&ast, Pixel::U16, &[Pixel::U16], None, &[]).expect("should compile expr");
 
     let mut actual = [0u16];
 
@@ -633,6 +688,7 @@ mod tests {
         1,
         1,
         0,
+        &[],
       );
     };
     assert_eq!(actual[0], 65535);

@@ -24,9 +24,10 @@ pub(crate) fn translate_expr(
   match expr {
     Expr::Lit(literal) => Ok(fx.bcx.ins().f32const(*literal)),
     Expr::Prop(name, prop) => {
+      let clip_idx = resolve_clip_name(name, &fx.src_types)?;
       let variable = fx
         .variables
-        .get(&format!("{name}.{prop}"))
+        .get(&format!("prop_{clip_idx}_{prop}"))
         .expect("frame property variable not defined");
       Ok(fx.bcx.use_var(*variable))
     }
@@ -90,10 +91,13 @@ pub(crate) fn translate_expr(
     // TODO: globals and user variables should reference different underlying
     // storage.
     Expr::Ident(name) | Expr::Load(name) => {
-      let variable = fx
-        .variables
-        .get(name)
-        .ok_or_else(|| CranexprError::UndefinedVariable(name.clone()))?;
+      let variable = if let Ok(clip_idx) = resolve_clip_name(name, &fx.src_types) {
+        fx.variables.get(&format!("src{clip_idx}"))
+      } else {
+        fx.variables.get(name)
+      }
+      .ok_or_else(|| CranexprError::UndefinedVariable(name.clone()))?;
+
       let val = fx.bcx.use_var(*variable);
       Ok(if fx.bcx.func.dfg.value_type(val) == types::I64 {
         fx.bcx.ins().fcvt_from_uint(types::F32, val)
