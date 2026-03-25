@@ -28,8 +28,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
-        target-cpu: [x86-64-v3, x86-64-v4]
+        os: [ubuntu-latest, windows-latest]
+        target-cpu: [x86-64, x86-64-v3]
         include:
           - os: ubuntu-latest
             target: x86_64-unknown-linux-gnu
@@ -38,11 +38,8 @@ jobs:
             target: x86_64-pc-windows-gnu
             ext: dll
           - os: macos-latest
-            target: x86_64-apple-darwin
-            ext: dylib
-          - os: macos-latest
             target: aarch64-apple-darwin
-            target-cpu: apple-m4
+            target-cpu: apple-m1
             ext: dylib
     runs-on: ${{ matrix.os }}
     steps:
@@ -90,7 +87,7 @@ jobs:
             ext: dll
           - os: macos-latest
             target: aarch64-apple-darwin
-            target-cpu: apple-m4
+            target-cpu: apple-m1
             ext: dylib
     runs-on: ${{ matrix.os }}
     steps:
