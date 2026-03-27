@@ -12,9 +12,9 @@ use crate::{
     compiler::{FunctionCx, SRC_MEMFLAGS},
     pointer::Pointer,
   },
+  component_type::ComponentType,
   errors::CranexprError,
   parser::ast::{BinOp, Expr, TernaryOp, UnOp},
-  pixel::Pixel,
 };
 
 pub(crate) fn translate_expr(
@@ -166,8 +166,8 @@ pub(crate) fn translate_expr(
 
       // Convert to float.
       let val = match src_type {
-        Pixel::U8 | Pixel::U16 => fx.bcx.ins().fcvt_from_uint(types::F32, val),
-        Pixel::F32 => val,
+        ComponentType::U8 | ComponentType::U16 => fx.bcx.ins().fcvt_from_uint(types::F32, val),
+        ComponentType::F32 => val,
       };
 
       Ok(val)
@@ -230,8 +230,8 @@ pub(crate) fn translate_expr(
 
       // Convert to float.
       let val = match src_type {
-        Pixel::U8 | Pixel::U16 => fx.bcx.ins().fcvt_from_uint(types::F32, val),
-        Pixel::F32 => val,
+        ComponentType::U8 | ComponentType::U16 => fx.bcx.ins().fcvt_from_uint(types::F32, val),
+        ComponentType::F32 => val,
       };
 
       let var = fx.bcx.declare_var(types::F32);
@@ -244,7 +244,7 @@ pub(crate) fn translate_expr(
 }
 
 /// Resolves a clip name (e.g., "x", "y", "src0") to a clip index.
-fn resolve_clip_name(clip: &str, src_types: &[Pixel]) -> Result<usize, CranexprError> {
+fn resolve_clip_name(clip: &str, src_types: &[ComponentType]) -> Result<usize, CranexprError> {
   // Check if it's a shorthand (x, y, z, a, b, ...)
   if clip.len() == 1 {
     let ch = clip.chars().next().unwrap();

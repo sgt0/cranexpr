@@ -2,10 +2,10 @@
 extern crate num_derive;
 
 mod codegen;
+mod component_type;
 mod errors;
 mod lexer;
 mod parser;
-mod pixel;
 mod prop_visitor;
 
 use const_str::cstr;
@@ -31,9 +31,9 @@ use vapoursynth4_rs::{
 
 use crate::{
   codegen::{MainFunction, compiler::compile_jit},
+  component_type::ComponentType,
   errors::CranexprError,
   parser::visit::Visitor,
-  pixel::Pixel,
   prop_visitor::PropVisitor,
 };
 
@@ -171,10 +171,10 @@ impl Filter for CranexprFilter {
         );
       }
 
-      let dst_type = Pixel::from_video_format(&vi);
+      let dst_type = ComponentType::from_video_format(&vi);
       let src_types = video_infos
         .iter()
-        .map(Pixel::from_video_format)
+        .map(ComponentType::from_video_format)
         .collect::<Vec<_>>();
 
       bytecode[i] = Some(compile_jit(
