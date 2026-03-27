@@ -15,9 +15,9 @@ use crate::BoundaryMode;
 use crate::codegen::MainFunction;
 use crate::codegen::pointer::Pointer;
 use crate::codegen::translate::translate_expr;
+use crate::component_type::ComponentType;
 use crate::errors::{CranexprError, CranexprResult};
 use crate::parser::ast::Expr;
-use crate::pixel::Pixel;
 
 pub(crate) const SRC_MEMFLAGS: MemFlags = MemFlags::trusted().with_readonly().with_can_move();
 const FRAME_PROP_MEMFLAGS: MemFlags = MemFlags::trusted().with_readonly().with_can_move();
@@ -30,9 +30,9 @@ pub(crate) struct FunctionCx<'m, 'clif> {
   pub(crate) variables: HashMap<String, Variable>,
 
   #[allow(dead_code)]
-  pub(crate) dst_type: Pixel,
+  pub(crate) dst_type: ComponentType,
   #[allow(dead_code)]
-  pub(crate) src_types: Vec<Pixel>,
+  pub(crate) src_types: Vec<ComponentType>,
 
   pub(crate) boundary_mode: BoundaryMode,
 
@@ -76,8 +76,8 @@ fn create_jit_module() -> JITModule {
 
 pub(crate) fn compile_jit(
   ast: &[Expr],
-  dst_type: Pixel,
-  src_types: &[Pixel],
+  dst_type: ComponentType,
+  src_types: &[ComponentType],
   boundary_mode: Option<BoundaryMode>,
   required_frame_props: &[(usize, String)],
 ) -> Result<MainFunction, CranexprError> {
@@ -99,8 +99,8 @@ pub(crate) fn compile_jit(
 fn create_entry_fn(
   m: &mut dyn Module,
   ast: &[Expr],
-  dst_type: Pixel,
-  src_types: &[Pixel],
+  dst_type: ComponentType,
+  src_types: &[ComponentType],
   boundary_mode: Option<BoundaryMode>,
   required_frame_props: &[(usize, String)],
 ) -> CranexprResult<FuncId> {
@@ -210,8 +210,8 @@ fn create_entry_fn(
 
         // Convert to float.
         let val = match src_type {
-          Pixel::U8 | Pixel::U16 => fx.bcx.ins().fcvt_from_uint(types::F32, val),
-          Pixel::F32 => val,
+          ComponentType::U8 | ComponentType::U16 => fx.bcx.ins().fcvt_from_uint(types::F32, val),
+          ComponentType::F32 => val,
         };
 
         // Store it in a variable.
@@ -236,7 +236,7 @@ fn create_entry_fn(
 
       // Convert output floats to integers if necessary.
       let expr_val = match dst_type {
-        Pixel::U8 | Pixel::U16 => {
+        ComponentType::U8 | ComponentType::U16 => {
           let zero = fx.bcx.ins().f32const(0.0);
           let peak_value = fx.bcx.ins().f32const(dst_type.peak_value());
 
@@ -245,7 +245,7 @@ fn create_entry_fn(
 
           fx.bcx.ins().fcvt_to_uint_sat(types::I32, clamped)
         }
-        Pixel::F32 => expr_val,
+        ComponentType::F32 => expr_val,
       };
 
       let dest_offset = fx.bcx.ins().imul_imm(idx, dst_type.bytes() as i64);
@@ -345,7 +345,7 @@ mod tests {
 
   fn run_expr_ndarray<T>(expr: &str, src: &Array2<T>) -> Array2<T>
   where
-    T: Into<Pixel> + Default,
+    T: Into<ComponentType> + Default,
   {
     let ast = parser::parse_expr(expr).unwrap();
     let (height, width) = src.dim();
@@ -478,8 +478,14 @@ mod tests {
   #[rstest]
   fn test_variables() {
     let ast = parser::parse_expr("x y +").unwrap();
-    let compiled = compile_jit(&ast, Pixel::F32, &[Pixel::F32, Pixel::F32], None, &[])
-      .expect("should compile expr");
+    let compiled = compile_jit(
+      &ast,
+      ComponentType::F32,
+      &[ComponentType::F32, ComponentType::F32],
+      None,
+      &[],
+    )
+    .expect("should compile expr");
 
     let mut actual = [0.0f32];
     let x = [3.0f32];
@@ -515,8 +521,8 @@ mod tests {
     ];
     let compiled = compile_jit(
       &ast,
-      Pixel::F32,
-      &[Pixel::F32, Pixel::F32],
+      ComponentType::F32,
+      &[ComponentType::F32, ComponentType::F32],
       None,
       &required_props,
     )
@@ -676,8 +682,8 @@ mod tests {
     let x = [33839u16];
     let ast = parser::parse_expr("x 32768 / 0.86 pow 65535 *").unwrap();
 
-    let compiled =
-      compile_jit(&ast, Pixel::U16, &[Pixel::U16], None, &[]).expect("should compile expr");
+    let compiled = compile_jit(&ast, ComponentType::U16, &[ComponentType::U16], None, &[])
+      .expect("should compile expr");
 
     let mut actual = [0u16];
 

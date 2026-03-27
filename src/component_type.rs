@@ -7,14 +7,14 @@ use vapours::{
 use vapoursynth4_rs::SampleType;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum Pixel {
+pub(crate) enum ComponentType {
   U8,
   U16,
   F32,
 }
 
-impl Pixel {
-  /// Maps a video format to a [Pixel].
+impl ComponentType {
+  /// Maps a video format to a [`ComponentType`].
   pub(crate) fn from_video_format<T: HoldsVideoFormat>(format: &T) -> Self {
     match format.sample_type() {
       SampleType::Integer => match format.video_format().bytes_per_sample {
@@ -43,29 +43,29 @@ impl Pixel {
   }
 }
 
-impl From<Pixel> for types::Type {
-  fn from(value: Pixel) -> Self {
+impl From<ComponentType> for types::Type {
+  fn from(value: ComponentType) -> Self {
     match value {
-      Pixel::U8 => types::I8,
-      Pixel::U16 => types::I16,
-      Pixel::F32 => types::F32,
+      ComponentType::U8 => types::I8,
+      ComponentType::U16 => types::I16,
+      ComponentType::F32 => types::F32,
     }
   }
 }
 
-impl From<u8> for Pixel {
+impl From<u8> for ComponentType {
   fn from(_: u8) -> Self {
     Self::U8
   }
 }
 
-impl From<u16> for Pixel {
+impl From<u16> for ComponentType {
   fn from(_: u16) -> Self {
     Self::U16
   }
 }
 
-impl From<f32> for Pixel {
+impl From<f32> for ComponentType {
   fn from(_: f32) -> Self {
     Self::F32
   }
