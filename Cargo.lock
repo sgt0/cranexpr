@@ -293,7 +293,7 @@ checksum = "ef53619d3cd5c78fd998c6d9420547af26b72e6456f94c2a8a2334cb76b42baa"
 
 [[package]]
 name = "cranexpr"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "approx",
  "const-str",
