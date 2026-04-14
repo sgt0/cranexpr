@@ -25,6 +25,10 @@
         "cranelift-native"
       ],
       "groupName": "cranelift"
+    },
+    {
+      "matchDepNames": ["python"],
+      "enabled": false
     }
   ]
 }
