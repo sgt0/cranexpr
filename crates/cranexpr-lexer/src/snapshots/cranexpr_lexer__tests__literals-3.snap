@@ -1,12 +1,12 @@
 ---
-source: src/lexer/mod.rs
-expression: "lex(\"0b101\")"
+source: src/lib.rs
+expression: "lex(\"0xABC\")"
 ---
 - kind:
     Literal:
       kind:
         Int:
-          base: Binary
+          base: Hexadecimal
           empty_int: false
       suffix_start: 5
   len: 5

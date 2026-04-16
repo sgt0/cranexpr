@@ -1,6 +1,6 @@
 ---
-source: src/lexer/mod.rs
-expression: "lex(\"d e <\")"
+source: src/lib.rs
+expression: "lex(\"a b =\")"
 ---
 - kind: Ident
   len: 1
@@ -10,5 +10,5 @@ expression: "lex(\"d e <\")"
   len: 1
 - kind: Whitespace
   len: 1
-- kind: Lt
+- kind: Eq
   len: 1

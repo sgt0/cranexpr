@@ -1,6 +1,6 @@
 ---
-source: src/lexer/mod.rs
-expression: "lex(\"1.0\")"
+source: src/lib.rs
+expression: "lex(\"1.0e10\")"
 ---
 - kind:
     Literal:
@@ -8,5 +8,5 @@ expression: "lex(\"1.0\")"
         Float:
           base: Decimal
           empty_exponent: false
-      suffix_start: 3
-  len: 3
+      suffix_start: 6
+  len: 6

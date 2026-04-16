@@ -1,10 +1,11 @@
 pub(crate) mod ast;
 pub(crate) mod visit;
 
+use cranexpr_lexer::{TokenKind, tokenize_with_text};
+
 use crate::{
   BoundaryMode,
   errors::{CranexprError, CranexprResult},
-  lexer::{TokenKind, tokenize_with_text},
   parser::ast::{BinOp, Expr, TernaryOp, UnOp},
 };
 

@@ -4,7 +4,6 @@ extern crate num_derive;
 mod codegen;
 mod component_type;
 mod errors;
-mod lexer;
 mod parser;
 mod prop_visitor;
 
