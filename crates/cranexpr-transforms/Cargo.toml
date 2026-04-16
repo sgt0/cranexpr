@@ -1,0 +1,13 @@
+[package]
+name = "cranexpr-transforms"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+miette = "=7.6.0"
+thiserror = "=2.0.18"
+
+cranexpr-ast = { workspace = true }
+
+[lints]
+workspace = true

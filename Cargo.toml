@@ -2,6 +2,7 @@
 members = [
   "crates/cranexpr-ast",
   "crates/cranexpr-lexer",
+  "crates/cranexpr-transforms",
 ]
 resolver = "3"
 
@@ -12,6 +13,7 @@ edition = "2024"
 [workspace.dependencies]
 cranexpr-ast = { path = "crates/cranexpr-ast" }
 cranexpr-lexer = { path = "crates/cranexpr-lexer" }
+cranexpr-transforms = { path = "crates/cranexpr-transforms" }
 
 [package]
 name = "cranexpr"
@@ -37,6 +39,7 @@ cranelift-native = "=0.130.1"
 
 cranexpr-ast = { workspace = true }
 cranexpr-lexer = { workspace = true }
+cranexpr-transforms = { workspace = true }
 
 [dev-dependencies]
 approx = "=0.5.1"

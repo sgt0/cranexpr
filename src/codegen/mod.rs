@@ -1,5 +1,4 @@
 pub mod compiler;
-pub mod globals;
 pub mod pointer;
 pub mod translate;
 
