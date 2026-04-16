@@ -15,8 +15,8 @@ pub enum CranexprError {
   #[error(transparent)]
   Transform(#[from] cranexpr_transforms::TransformError),
 
-  #[error("Compilation error: {0}")]
-  CompilationError(String),
+  #[error(transparent)]
+  Codegen(#[from] cranexpr_codegen::errors::CodegenError),
 
   #[error("Invalid frame property name '{0}'.")]
   InvalidFramePropertyName(String),
@@ -29,9 +29,6 @@ pub enum CranexprError {
 
   #[error("Input and output formats have a different number of planes.")]
   PlanesMismatch,
-
-  #[error("Undefined variable '{0}'.")]
-  UndefinedVariable(String),
 
   #[error("Unrecognized boundary mode.")]
   UnrecognizedBoundaryMode,
@@ -47,6 +44,3 @@ impl AsRef<CStr> for CranexprError {
     Box::leak(cs.into_boxed_c_str())
   }
 }
-
-/// Alias for a `Result` that uses `CranexprError` as the error type.
-pub type CranexprResult<T> = Result<T, CranexprError>;

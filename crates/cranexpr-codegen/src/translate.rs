@@ -5,22 +5,19 @@ use cranelift::{
   prelude::*,
 };
 use cranelift_module::{Linkage, Module};
-use cranexpr_ast::{BinOp, Expr, TernaryOp, UnOp};
+use cranexpr_ast::{BinOp, BoundaryMode, Expr, TernaryOp, UnOp};
 
 use crate::{
-  BoundaryMode,
-  codegen::{
-    compiler::{FunctionCx, SRC_MEMFLAGS},
-    pointer::Pointer,
-  },
+  compiler::{FunctionCx, SRC_MEMFLAGS},
   component_type::ComponentType,
-  errors::CranexprError,
+  errors::CodegenError,
+  pointer::Pointer,
 };
 
 pub(crate) fn translate_expr(
   fx: &mut FunctionCx<'_, '_>,
   expr: &Expr,
-) -> Result<Value, CranexprError> {
+) -> Result<Value, CodegenError> {
   match expr {
     Expr::Lit(literal) => Ok(fx.bcx.ins().f32const(*literal)),
     Expr::Prop(name, prop) => {
@@ -96,7 +93,7 @@ pub(crate) fn translate_expr(
       } else {
         fx.variables.get(name)
       }
-      .ok_or_else(|| CranexprError::UndefinedVariable(name.clone()))?;
+      .ok_or_else(|| CodegenError::UndefinedVariable(name.clone()))?;
 
       let val = fx.bcx.use_var(*variable);
       Ok(if fx.bcx.func.dfg.value_type(val) == types::I64 {
@@ -189,11 +186,11 @@ pub(crate) fn translate_expr(
       let x_var = fx
         .variables
         .get("X")
-        .ok_or_else(|| CranexprError::UndefinedVariable("X".to_string()))?;
+        .ok_or_else(|| CodegenError::UndefinedVariable("X".to_string()))?;
       let y_var = fx
         .variables
         .get("Y")
-        .ok_or_else(|| CranexprError::UndefinedVariable("Y".to_string()))?;
+        .ok_or_else(|| CodegenError::UndefinedVariable("Y".to_string()))?;
 
       let x_coord = fx.bcx.use_var(*x_var);
       let y_coord = fx.bcx.use_var(*y_var);
@@ -244,7 +241,7 @@ pub(crate) fn translate_expr(
 }
 
 /// Resolves a clip name (e.g., "x", "y", "src0") to a clip index.
-fn resolve_clip_name(clip: &str, src_types: &[ComponentType]) -> Result<usize, CranexprError> {
+fn resolve_clip_name(clip: &str, src_types: &[ComponentType]) -> Result<usize, CodegenError> {
   // Check if it's a shorthand (x, y, z, a, b, ...)
   if clip.len() == 1 {
     let ch = clip.chars().next().unwrap();
@@ -269,7 +266,7 @@ fn resolve_clip_name(clip: &str, src_types: &[ComponentType]) -> Result<usize, C
     return Ok(idx);
   }
 
-  Err(CranexprError::UndefinedVariable(clip.to_string()))
+  Err(CodegenError::UndefinedVariable(clip.to_string()))
 }
 
 fn translate_if_else(
@@ -277,7 +274,7 @@ fn translate_if_else(
   condition: &Expr,
   then_body: &Expr,
   else_body: &Expr,
-) -> Result<Value, CranexprError> {
+) -> Result<Value, CodegenError> {
   // A value is considered truthy if and only if it is greater than 0.
   let zero = fx.bcx.ins().f32const(0.0);
   let mut condition_value = translate_expr(fx, condition)?;

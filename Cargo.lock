@@ -295,20 +295,13 @@ checksum = "ef53619d3cd5c78fd998c6d9420547af26b72e6456f94c2a8a2334cb76b42baa"
 name = "cranexpr"
 version = "0.3.0"
 dependencies = [
- "approx",
  "const-str",
- "cranelift",
- "cranelift-jit",
- "cranelift-module",
- "cranelift-native",
  "cranexpr-ast",
+ "cranexpr-codegen",
  "cranexpr-parser",
  "cranexpr-transforms",
  "miette",
- "nanoid",
- "ndarray",
  "num-traits",
- "rstest",
  "thiserror",
  "vapours",
  "vapoursynth4-rs",
@@ -323,6 +316,24 @@ dependencies = [
  "serde",
  "strum",
  "strum_macros",
+]
+
+[[package]]
+name = "cranexpr-codegen"
+version = "0.3.0"
+dependencies = [
+ "approx",
+ "cranelift",
+ "cranelift-jit",
+ "cranelift-module",
+ "cranelift-native",
+ "cranexpr-ast",
+ "cranexpr-parser",
+ "miette",
+ "nanoid",
+ "ndarray",
+ "rstest",
+ "thiserror",
 ]
 
 [[package]]
