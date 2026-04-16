@@ -39,8 +39,10 @@ select = ["E", "F", "FA", "UP", "B", "SIM", "I", "RUF022"]
 ignore = []
 
 [tool.cibuildwheel]
+build = "cp312-*"     # Only need to target the minimum Python version.
 skip = [
     "*-musllinux_*",  # musl targets do not support cdylib by design.
+    "*-win32",        # Not supported by VapourSynth.
 ]
 
 [tool.cibuildwheel.macos.environment]
