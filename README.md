@@ -83,7 +83,7 @@ core.cranexpr.Expr([x], "x[-1,-1] x[0,-1] x[1,-1] x[-1,0] x x[1,0] x[-1,1] x[0,1
 
 ```python
 cranexpr.Expr(
-  clips: Sequence[vs.VideoNode],
+  clips: vs.VideoNode | Sequence[vs.VideoNode],
   expr: str | list[str],
   format: int | None = None,
   boundary: Literal[0, 1] = 0,
