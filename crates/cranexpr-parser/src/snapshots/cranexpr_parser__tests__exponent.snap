@@ -1,5 +1,5 @@
 ---
-source: src/parser/mod.rs
+source: crates/cranexpr-parser/src/lib.rs
 expression: "parse_expr(\"x 1e-06 + y.PlaneStatsAverage *\").unwrap()"
 ---
 - Binary:

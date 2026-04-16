@@ -231,7 +231,7 @@ fn create_entry_fn(
         // Last expression is expected to evaluate to the final result.
         translate_expr(fx, last_expr)?
       } else {
-        return Err(CranexprError::ExpressionEvaluatesToNothing);
+        return Err(cranexpr_parser::ParseError::ExpressionEvaluatesToNothing.into());
       };
 
       // Convert output floats to integers if necessary.
@@ -341,13 +341,12 @@ mod tests {
   use rstest::rstest;
 
   use super::*;
-  use crate::parser;
 
   fn run_expr_ndarray<T>(expr: &str, src: &Array2<T>) -> Array2<T>
   where
     T: Into<ComponentType> + Default,
   {
-    let ast = parser::parse_expr(expr).unwrap();
+    let ast = cranexpr_parser::parse_expr(expr).unwrap();
     let (height, width) = src.dim();
     let pixel = T::default().into();
 
@@ -477,7 +476,7 @@ mod tests {
 
   #[rstest]
   fn test_variables() {
-    let ast = parser::parse_expr("x y +").unwrap();
+    let ast = cranexpr_parser::parse_expr("x y +").unwrap();
     let compiled = compile_jit(
       &ast,
       ComponentType::F32,
@@ -514,7 +513,7 @@ mod tests {
 
   #[rstest]
   fn test_properties() {
-    let ast = parser::parse_expr("x.PlaneStatsAverage y.PlaneStatsAverage + x *").unwrap();
+    let ast = cranexpr_parser::parse_expr("x.PlaneStatsAverage y.PlaneStatsAverage + x *").unwrap();
     let required_props = vec![
       (0, "PlaneStatsAverage".to_string()),
       (1, "PlaneStatsAverage".to_string()),
@@ -680,7 +679,7 @@ mod tests {
   #[rstest]
   fn test_integer_format_clamp() {
     let x = [33839u16];
-    let ast = parser::parse_expr("x 32768 / 0.86 pow 65535 *").unwrap();
+    let ast = cranexpr_parser::parse_expr("x 32768 / 0.86 pow 65535 *").unwrap();
 
     let compiled = compile_jit(&ast, ComponentType::U16, &[ComponentType::U16], None, &[])
       .expect("should compile expr");

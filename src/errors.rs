@@ -9,29 +9,17 @@ use thiserror::Error;
 /// Errors from cranexpr.
 #[derive(Debug, Diagnostic, Error)]
 pub enum CranexprError {
-  #[error("Compilation error: {0}")]
-  CompilationError(String),
-
-  #[error("Attempt to drop out of bounds.")]
-  DropOutOfBounds,
-
-  #[error("Attempt to dup out of bounds.")]
-  DupOutOfBounds,
-
-  #[error("Expression evaluates to nothing.")]
-  ExpressionEvaluatesToNothing,
-
-  #[error("Expression does not evaluate to a single value.")]
-  ExpressionDoesNotEvaluateToSingleValue,
+  #[error(transparent)]
+  Parse(#[from] cranexpr_parser::ParseError),
 
   #[error(transparent)]
   Transform(#[from] cranexpr_transforms::TransformError),
 
+  #[error("Compilation error: {0}")]
+  CompilationError(String),
+
   #[error("Invalid frame property name '{0}'.")]
   InvalidFramePropertyName(String),
-
-  #[error("Missing frame property name.")]
-  MissingFramePropertyName,
 
   #[error("More expressions given than there are planes.")]
   MoreExpressionsThanPlanes,
@@ -42,23 +30,11 @@ pub enum CranexprError {
   #[error("Input and output formats have a different number of planes.")]
   PlanesMismatch,
 
-  #[error("Frame property name is not an identifier.")]
-  PropertyNameNotAnIdentifier,
-
-  #[error("Stack underflow.")]
-  StackUnderflow,
-
-  #[error("Attempt to swap out of bounds.")]
-  SwapOutOfBounds,
-
   #[error("Undefined variable '{0}'.")]
   UndefinedVariable(String),
 
   #[error("Unrecognized boundary mode.")]
   UnrecognizedBoundaryMode,
-
-  #[error("Unrecognized token: {0}")]
-  UnrecognizedToken(String),
 
   #[error("Only clips with constant format and dimensions are allowed")]
   VariableFormat,

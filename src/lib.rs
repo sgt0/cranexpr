@@ -1,7 +1,6 @@
 mod codegen;
 mod component_type;
 mod errors;
-mod parser;
 
 use const_str::cstr;
 use cranexpr_ast::BoundaryMode;
@@ -135,7 +134,7 @@ impl Filter for CranexprFilter {
         continue;
       }
 
-      let ast = parser::parse_expr(expr[i])?;
+      let ast = cranexpr_parser::parse_expr(expr[i])?;
       let mut visitor = PropVisitor::new(num_inputs as usize);
 
       for node in &ast {
