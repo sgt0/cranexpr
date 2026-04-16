@@ -1,6 +1,6 @@
 use cranelift::{codegen::ir::immediates::Offset32, prelude::*};
 
-use crate::codegen::compiler::FunctionCx;
+use crate::compiler::FunctionCx;
 
 #[derive(Copy, Clone, Debug)]
 pub(crate) struct Pointer {

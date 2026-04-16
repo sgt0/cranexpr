@@ -1,6 +1,7 @@
 [workspace]
 members = [
   "crates/cranexpr-ast",
+  "crates/cranexpr-codegen",
   "crates/cranexpr-lexer",
   "crates/cranexpr-parser",
   "crates/cranexpr-transforms",
@@ -13,6 +14,7 @@ edition = "2024"
 
 [workspace.dependencies]
 cranexpr-ast = { path = "crates/cranexpr-ast" }
+cranexpr-codegen = { path = "crates/cranexpr-codegen" }
 cranexpr-lexer = { path = "crates/cranexpr-lexer" }
 cranexpr-parser = { path = "crates/cranexpr-parser" }
 cranexpr-transforms = { path = "crates/cranexpr-transforms" }
@@ -28,25 +30,15 @@ crate-type = ["cdylib"]
 [dependencies]
 const-str = "=1.1.0"
 miette = "=7.6.0"
-nanoid = "=0.5.0"
 num-traits = "=0.2.19"
 thiserror = "=2.0.18"
 vapours = "=0.2.5"
 vapoursynth4-rs = "=0.4.0"
 
-cranelift = "=0.130.1"
-cranelift-jit = "=0.130.1"
-cranelift-module = "=0.130.1"
-cranelift-native = "=0.130.1"
-
 cranexpr-ast = { workspace = true }
+cranexpr-codegen = { workspace = true }
 cranexpr-parser = { workspace = true }
 cranexpr-transforms = { workspace = true }
-
-[dev-dependencies]
-approx = "=0.5.1"
-ndarray = "=0.17.2"
-rstest = "=0.26.1"
 
 [patch.crates-io]
 vapoursynth4-rs = { git = "https://github.com/inflation/vapoursynth4-rs", rev = "ae1ae21d292f9c8531afcedfc0aa56dda4050523" }

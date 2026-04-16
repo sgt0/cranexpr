@@ -1,4 +1,3 @@
-mod codegen;
 mod component_type;
 mod errors;
 
@@ -23,9 +22,10 @@ use vapoursynth4_rs::{
   utils::is_constant_video_format,
 };
 
+use cranexpr_codegen::{MainFunction, compile_jit};
+
 use crate::{
-  codegen::{MainFunction, compiler::compile_jit},
-  component_type::ComponentType,
+  component_type::{ComponentType, FromVideoFormat},
   errors::CranexprError,
 };
 use cranexpr_transforms::{PropVisitor, Visitor};

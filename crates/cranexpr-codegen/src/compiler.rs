@@ -9,15 +9,14 @@ use cranelift::prelude::*;
 use cranelift::{codegen::Context, prelude::FunctionBuilderContext};
 use cranelift_jit::{JITBuilder, JITModule};
 use cranelift_module::{FuncId, Linkage, Module, ModuleError};
-use cranexpr_ast::Expr;
+use cranexpr_ast::{BoundaryMode, Expr};
 use nanoid::nanoid;
 
-use crate::BoundaryMode;
-use crate::codegen::MainFunction;
-use crate::codegen::pointer::Pointer;
-use crate::codegen::translate::translate_expr;
+use crate::MainFunction;
 use crate::component_type::ComponentType;
-use crate::errors::{CranexprError, CranexprResult};
+use crate::errors::{CodegenError, CodegenResult};
+use crate::pointer::Pointer;
+use crate::translate::translate_expr;
 
 pub(crate) const SRC_MEMFLAGS: MemFlags = MemFlags::trusted().with_readonly().with_can_move();
 const FRAME_PROP_MEMFLAGS: MemFlags = MemFlags::trusted().with_readonly().with_can_move();
@@ -74,13 +73,22 @@ fn create_jit_module() -> JITModule {
   JITModule::new(jit_builder)
 }
 
-pub(crate) fn compile_jit(
+/// Compiles an expression AST into a JIT-compiled function.
+///
+/// # Errors
+///
+/// Returns a [`CodegenError`] if the expression cannot be compiled.
+///
+/// # Panics
+///
+/// Panics if JIT finalization fails.
+pub fn compile_jit(
   ast: &[Expr],
   dst_type: ComponentType,
   src_types: &[ComponentType],
   boundary_mode: Option<BoundaryMode>,
   required_frame_props: &[(usize, String)],
-) -> Result<MainFunction, CranexprError> {
+) -> Result<MainFunction, CodegenError> {
   let mut jit_module = create_jit_module();
   let main_func_id = create_entry_fn(
     &mut jit_module,
@@ -103,7 +111,7 @@ fn create_entry_fn(
   src_types: &[ComponentType],
   boundary_mode: Option<BoundaryMode>,
   required_frame_props: &[(usize, String)],
-) -> CranexprResult<FuncId> {
+) -> CodegenResult<FuncId> {
   let pointer_type = m.target_config().pointer_type();
   let pointer_size = pointer_type.bytes() as i32;
 
@@ -266,7 +274,7 @@ fn create_entry_fn(
       ModuleError::Compilation(source) => pretty_error(&ctx.func, source),
       _ => err.to_string(),
     };
-    return Err(CranexprError::CompilationError(err_msg));
+    return Err(CodegenError::CompilationError(err_msg));
   }
 
   // println!("{}", ctx.func.display());
@@ -279,8 +287,8 @@ fn codegen_for_loop(
   start_idx: Value,
   stop_idx: Value,
   step: Value,
-  mut codegen_loop_body: impl FnMut(&mut FunctionCx<'_, '_>, Value) -> CranexprResult<()>,
-) -> CranexprResult<()> {
+  mut codegen_loop_body: impl FnMut(&mut FunctionCx<'_, '_>, Value) -> CodegenResult<()>,
+) -> CodegenResult<()> {
   let current_block = fx.bcx.current_block().unwrap();
   let loop_header_block = fx.bcx.create_block();
   let loop_body_block = fx.bcx.create_block();

@@ -1,12 +1,17 @@
-pub mod compiler;
-pub mod pointer;
-pub mod translate;
+pub mod component_type;
+pub mod errors;
+
+mod compiler;
+mod pointer;
+mod translate;
+
+pub use compiler::compile_jit;
 
 type MainFunc =
   unsafe extern "C" fn(*mut u8, i64, *const *const u8, i64, i64, i64, i64, *const f32);
 
 #[derive(Debug)]
-pub(crate) struct MainFunction {
+pub struct MainFunction {
   ptr: *const u8,
 }
 
@@ -15,8 +20,14 @@ impl MainFunction {
     Self { ptr }
   }
 
+  /// Invokes the compiled function.
+  ///
+  /// # Safety
+  ///
+  /// The caller must ensure that `dst`, `srcs`, and `frame_props` are valid
+  /// and that the types match those used during compilation.
   #[inline]
-  pub(crate) unsafe fn invoke<D, S, I>(
+  pub unsafe fn invoke<D, S, I>(
     &self,
     dst: &mut [D],
     srcs: I,
