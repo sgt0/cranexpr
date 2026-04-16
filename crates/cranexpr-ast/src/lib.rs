@@ -1,11 +1,20 @@
+use num_derive::FromPrimitive;
 use serde::Serialize;
 use strum_macros::{Display, EnumString};
 
-use crate::BoundaryMode;
+/// Boundary handling mode.
+#[derive(Clone, Copy, Debug, Eq, FromPrimitive, PartialEq, Serialize)]
+pub enum BoundaryMode {
+  /// Clamped boundary.
+  Clamp = 0,
+
+  /// Mirrored boundary.
+  Mirror = 1,
+}
 
 /// Binary operator.
-#[derive(Clone, Copy, Debug, Display, EnumString, PartialEq, Serialize)]
-pub(crate) enum BinOp {
+#[derive(Clone, Copy, Debug, Display, EnumString, Eq, PartialEq, Serialize)]
+pub enum BinOp {
   /// The `+` operator (addition)
   #[strum(serialize = "+")]
   Add,
@@ -60,8 +69,8 @@ pub(crate) enum BinOp {
 }
 
 /// Unary operator.
-#[derive(Clone, Copy, Debug, Display, EnumString, PartialEq, Serialize)]
-pub(crate) enum UnOp {
+#[derive(Clone, Copy, Debug, Display, EnumString, Eq, PartialEq, Serialize)]
+pub enum UnOp {
   /// The `abs` operator (absolute value).
   #[strum(serialize = "abs")]
   Abs,
@@ -102,8 +111,8 @@ pub(crate) enum UnOp {
 }
 
 /// Ternary operator.
-#[derive(Clone, Copy, Debug, Display, EnumString, PartialEq, Serialize)]
-pub(crate) enum TernaryOp {
+#[derive(Clone, Copy, Debug, Display, EnumString, Eq, PartialEq, Serialize)]
+pub enum TernaryOp {
   /// The `clip` or `clamp` operator (clamps a value to a range).
   #[strum(serialize = "clip")]
   Clip,
@@ -111,7 +120,7 @@ pub(crate) enum TernaryOp {
 
 /// The AST node for expressions.
 #[derive(Clone, Debug, Serialize)]
-pub(crate) enum Expr {
+pub enum Expr {
   /// A binary operation (e.g., `a b +`, `a b *`).
   Binary(BinOp, Box<Self>, Box<Self>),
 

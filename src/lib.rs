@@ -1,6 +1,3 @@
-#[macro_use]
-extern crate num_derive;
-
 mod codegen;
 mod component_type;
 mod errors;
@@ -8,8 +5,8 @@ mod parser;
 mod prop_visitor;
 
 use const_str::cstr;
+use cranexpr_ast::BoundaryMode;
 use num_traits::FromPrimitive;
-use serde::Serialize;
 use std::{
   ffi::{CStr, c_void},
   ptr, slice,
@@ -41,16 +38,6 @@ enum PlaneOp {
   Process,
   Copy,
   Undefined,
-}
-
-/// Boundary handling mode.
-#[derive(Clone, Copy, Debug, FromPrimitive, Serialize)]
-pub(crate) enum BoundaryMode {
-  /// Clamped boundary.
-  Clamp = 0,
-
-  /// Mirrored boundary.
-  Mirror = 1,
 }
 
 struct CranexprFilter {

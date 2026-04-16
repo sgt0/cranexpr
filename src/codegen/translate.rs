@@ -5,6 +5,7 @@ use cranelift::{
   prelude::*,
 };
 use cranelift_module::{Linkage, Module};
+use cranexpr_ast::{BinOp, Expr, TernaryOp, UnOp};
 
 use crate::{
   BoundaryMode,
@@ -14,7 +15,6 @@ use crate::{
   },
   component_type::ComponentType,
   errors::CranexprError,
-  parser::ast::{BinOp, Expr, TernaryOp, UnOp},
 };
 
 pub(crate) fn translate_expr(

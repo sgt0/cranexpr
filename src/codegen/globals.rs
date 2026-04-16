@@ -2,7 +2,8 @@
 
 use std::collections::HashSet;
 
-use crate::parser::{ast::Expr, visit::Visitor};
+use crate::parser::visit::Visitor;
+use cranexpr_ast::Expr;
 
 #[derive(Default)]
 pub(crate) struct Globals(HashSet<String>);

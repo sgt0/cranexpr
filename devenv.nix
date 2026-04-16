@@ -21,5 +21,6 @@
   packages = with pkgs; [
     cargo-insta
     cargo-nextest
+    cargo-shear
   ];
 }

@@ -9,6 +9,7 @@ use cranelift::prelude::*;
 use cranelift::{codegen::Context, prelude::FunctionBuilderContext};
 use cranelift_jit::{JITBuilder, JITModule};
 use cranelift_module::{FuncId, Linkage, Module, ModuleError};
+use cranexpr_ast::Expr;
 use nanoid::nanoid;
 
 use crate::BoundaryMode;
@@ -17,7 +18,6 @@ use crate::codegen::pointer::Pointer;
 use crate::codegen::translate::translate_expr;
 use crate::component_type::ComponentType;
 use crate::errors::{CranexprError, CranexprResult};
-use crate::parser::ast::Expr;
 
 pub(crate) const SRC_MEMFLAGS: MemFlags = MemFlags::trusted().with_readonly().with_can_move();
 const FRAME_PROP_MEMFLAGS: MemFlags = MemFlags::trusted().with_readonly().with_can_move();

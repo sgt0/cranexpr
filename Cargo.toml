@@ -1,6 +1,7 @@
 [workspace]
 members = [
-  "crates/cranexpr-lexer"
+  "crates/cranexpr-ast",
+  "crates/cranexpr-lexer",
 ]
 resolver = "3"
 
@@ -9,6 +10,7 @@ version = "0.3.0"
 edition = "2024"
 
 [workspace.dependencies]
+cranexpr-ast = { path = "crates/cranexpr-ast" }
 cranexpr-lexer = { path = "crates/cranexpr-lexer" }
 
 [package]
@@ -23,11 +25,7 @@ crate-type = ["cdylib"]
 const-str = "=1.1.0"
 miette = "=7.6.0"
 nanoid = "=0.5.0"
-num-derive = "=0.4.2"
 num-traits = "=0.2.19"
-serde = { version = "=1.0.228", features = ["derive"] }
-strum = "=0.28.0"
-strum_macros = "=0.28.0"
 thiserror = "=2.0.18"
 vapours = "=0.2.5"
 vapoursynth4-rs = "=0.4.0"
@@ -37,6 +35,7 @@ cranelift-jit = "=0.130.1"
 cranelift-module = "=0.130.1"
 cranelift-native = "=0.130.1"
 
+cranexpr-ast = { workspace = true }
 cranexpr-lexer = { workspace = true }
 
 [dev-dependencies]
@@ -93,6 +92,3 @@ unreadable_literal = { level = "allow", priority = 1 }
 
 [lints]
 workspace = true
-
-[package.metadata.cargo-shear]
-ignored = ["strum"]

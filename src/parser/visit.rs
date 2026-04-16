@@ -1,6 +1,6 @@
 #![allow(dead_code)]
 
-use crate::parser::ast::{BinOp, Expr, TernaryOp, UnOp};
+use cranexpr_ast::{BinOp, Expr, TernaryOp, UnOp};
 
 /// A trait for AST visitors. Visits all nodes in the AST recursively.
 pub(crate) trait Visitor<'a>: Sized {
