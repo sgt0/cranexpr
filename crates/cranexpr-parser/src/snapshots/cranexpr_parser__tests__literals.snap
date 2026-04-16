@@ -1,5 +1,5 @@
 ---
-source: src/parser/mod.rs
+source: crates/cranexpr-parser/src/lib.rs
 expression: "parse_expr(\"1234\").unwrap()"
 ---
 - Lit: 1234

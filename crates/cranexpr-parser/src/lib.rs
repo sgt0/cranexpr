@@ -1,34 +1,37 @@
-use cranexpr_ast::{BinOp, Expr, TernaryOp, UnOp};
+mod errors;
+
+pub use errors::ParseError;
+
+use cranexpr_ast::{BinOp, BoundaryMode, Expr, TernaryOp, UnOp};
 use cranexpr_lexer::{TokenKind, tokenize_with_text};
 
-use crate::{
-  BoundaryMode,
-  errors::{CranexprError, CranexprResult},
-};
-
-fn add_unary_op(stack: &mut Vec<Expr>, op: UnOp) -> CranexprResult<()> {
-  let x = stack.pop().ok_or(CranexprError::StackUnderflow)?;
+fn add_unary_op(stack: &mut Vec<Expr>, op: UnOp) -> Result<(), ParseError> {
+  let x = stack.pop().ok_or(ParseError::StackUnderflow)?;
   stack.push(Expr::Unary(op, Box::new(x)));
   Ok(())
 }
 
-fn add_binary_op(stack: &mut Vec<Expr>, op: BinOp) -> CranexprResult<()> {
-  let right = stack.pop().ok_or(CranexprError::StackUnderflow)?;
-  let left = stack.pop().ok_or(CranexprError::StackUnderflow)?;
+fn add_binary_op(stack: &mut Vec<Expr>, op: BinOp) -> Result<(), ParseError> {
+  let right = stack.pop().ok_or(ParseError::StackUnderflow)?;
+  let left = stack.pop().ok_or(ParseError::StackUnderflow)?;
   stack.push(Expr::Binary(op, Box::new(left), Box::new(right)));
   Ok(())
 }
 
-fn add_ternary_op(stack: &mut Vec<Expr>, op: TernaryOp) -> CranexprResult<()> {
-  let c = stack.pop().ok_or(CranexprError::StackUnderflow)?;
-  let b = stack.pop().ok_or(CranexprError::StackUnderflow)?;
-  let a = stack.pop().ok_or(CranexprError::StackUnderflow)?;
+fn add_ternary_op(stack: &mut Vec<Expr>, op: TernaryOp) -> Result<(), ParseError> {
+  let c = stack.pop().ok_or(ParseError::StackUnderflow)?;
+  let b = stack.pop().ok_or(ParseError::StackUnderflow)?;
+  let a = stack.pop().ok_or(ParseError::StackUnderflow)?;
   stack.push(Expr::Ternary(op, Box::new(a), Box::new(b), Box::new(c)));
   Ok(())
 }
 
 /// Parses an expression into a sequence of ASTs.
-pub(crate) fn parse_expr(expr: &str) -> CranexprResult<Vec<Expr>> {
+///
+/// # Errors
+///
+/// Returns a [`ParseError`] if the expression is malformed.
+pub fn parse_expr(expr: &str) -> Result<Vec<Expr>, ParseError> {
   let mut stack = Vec::new();
 
   // We don't filter out whitespace tokens because they're significant when it
@@ -43,7 +46,10 @@ pub(crate) fn parse_expr(expr: &str) -> CranexprResult<Vec<Expr>> {
         kind: _,
         suffix_start: _,
       } => {
-        stack.push(Expr::Lit(text.parse::<f32>().unwrap()));
+        let value = text
+          .parse::<f32>()
+          .map_err(|_| ParseError::InvalidLiteral(text.to_string()))?;
+        stack.push(Expr::Lit(value));
       }
       TokenKind::Ident => {
         // An identifier followed by an open bracket is relative or absolute pixel access.
@@ -70,21 +76,21 @@ pub(crate) fn parse_expr(expr: &str) -> CranexprResult<Vec<Expr>> {
               {
                 tokens.next();
               }
-              let (mode_kind, mode_text) = tokens.next().ok_or(CranexprError::StackUnderflow)?;
+              let (mode_kind, mode_text) = tokens.next().ok_or(ParseError::StackUnderflow)?;
               if mode_kind != TokenKind::Ident {
-                return Err(CranexprError::StackUnderflow);
+                return Err(ParseError::StackUnderflow);
               }
               match mode_text {
                 "c" => Some(BoundaryMode::Clamp),
                 "m" => Some(BoundaryMode::Mirror),
-                _ => return Err(CranexprError::StackUnderflow),
+                _ => return Err(ParseError::StackUnderflow),
               }
             } else {
               Some(BoundaryMode::Clamp) // Default to clamp if no suffix
             };
 
-            let y = stack.pop().ok_or(CranexprError::StackUnderflow)?;
-            let x = stack.pop().ok_or(CranexprError::StackUnderflow)?;
+            let y = stack.pop().ok_or(ParseError::StackUnderflow)?;
+            let x = stack.pop().ok_or(ParseError::StackUnderflow)?;
 
             stack.push(Expr::AbsAccess {
               clip: text.to_string(),
@@ -95,22 +101,22 @@ pub(crate) fn parse_expr(expr: &str) -> CranexprResult<Vec<Expr>> {
           } else {
             // Relative access parsing
             // Parse relX (must be an integer literal).
-            let (rel_x_kind, rel_x_text) = tokens.next().ok_or(CranexprError::StackUnderflow)?;
+            let (rel_x_kind, rel_x_text) = tokens.next().ok_or(ParseError::StackUnderflow)?;
             let rel_x = match rel_x_kind {
               TokenKind::Literal { .. } => rel_x_text
                 .parse::<i32>()
-                .map_err(|_| CranexprError::StackUnderflow)?,
+                .map_err(|_| ParseError::StackUnderflow)?,
               TokenKind::Minus => {
                 // Negative integer literal.
-                let (lit_kind, lit_text) = tokens.next().ok_or(CranexprError::StackUnderflow)?;
+                let (lit_kind, lit_text) = tokens.next().ok_or(ParseError::StackUnderflow)?;
                 if !matches!(lit_kind, TokenKind::Literal { .. }) {
-                  return Err(CranexprError::StackUnderflow);
+                  return Err(ParseError::StackUnderflow);
                 }
                 -(lit_text
                   .parse::<i32>()
-                  .map_err(|_| CranexprError::StackUnderflow)?)
+                  .map_err(|_| ParseError::StackUnderflow)?)
               }
-              _ => return Err(CranexprError::StackUnderflow),
+              _ => return Err(ParseError::StackUnderflow),
             };
 
             // Skip whitespace and optional comma.
@@ -122,21 +128,21 @@ pub(crate) fn parse_expr(expr: &str) -> CranexprResult<Vec<Expr>> {
             }
 
             // Parse relY.
-            let (rel_y_kind, rel_y_text) = tokens.next().ok_or(CranexprError::StackUnderflow)?;
+            let (rel_y_kind, rel_y_text) = tokens.next().ok_or(ParseError::StackUnderflow)?;
             let rel_y = match rel_y_kind {
               TokenKind::Literal { .. } => rel_y_text
                 .parse::<i32>()
-                .map_err(|_| CranexprError::StackUnderflow)?,
+                .map_err(|_| ParseError::StackUnderflow)?,
               TokenKind::Minus => {
-                let (lit_kind, lit_text) = tokens.next().ok_or(CranexprError::StackUnderflow)?;
+                let (lit_kind, lit_text) = tokens.next().ok_or(ParseError::StackUnderflow)?;
                 if !matches!(lit_kind, TokenKind::Literal { .. }) {
-                  return Err(CranexprError::StackUnderflow);
+                  return Err(ParseError::StackUnderflow);
                 }
                 -(lit_text
                   .parse::<i32>()
-                  .map_err(|_| CranexprError::StackUnderflow)?)
+                  .map_err(|_| ParseError::StackUnderflow)?)
               }
-              _ => return Err(CranexprError::StackUnderflow),
+              _ => return Err(ParseError::StackUnderflow),
             };
 
             // Expect close bracket, but skip whitespace first.
@@ -146,9 +152,9 @@ pub(crate) fn parse_expr(expr: &str) -> CranexprResult<Vec<Expr>> {
             {
               tokens.next();
             }
-            let (rbracket_kind, _) = tokens.next().ok_or(CranexprError::StackUnderflow)?;
+            let (rbracket_kind, _) = tokens.next().ok_or(ParseError::StackUnderflow)?;
             if rbracket_kind != TokenKind::CloseBracket {
-              return Err(CranexprError::StackUnderflow);
+              return Err(ParseError::StackUnderflow);
             }
 
             // Parse optional boundary mode suffix.
@@ -161,14 +167,14 @@ pub(crate) fn parse_expr(expr: &str) -> CranexprResult<Vec<Expr>> {
               {
                 tokens.next();
               }
-              let (mode_kind, mode_text) = tokens.next().ok_or(CranexprError::StackUnderflow)?;
+              let (mode_kind, mode_text) = tokens.next().ok_or(ParseError::StackUnderflow)?;
               if mode_kind != TokenKind::Ident {
-                return Err(CranexprError::StackUnderflow);
+                return Err(ParseError::StackUnderflow);
               }
               match mode_text {
                 "c" => Some(BoundaryMode::Clamp),
                 "m" => Some(BoundaryMode::Mirror),
-                _ => return Err(CranexprError::StackUnderflow),
+                _ => return Err(ParseError::StackUnderflow),
               }
             } else {
               None
@@ -185,11 +191,9 @@ pub(crate) fn parse_expr(expr: &str) -> CranexprResult<Vec<Expr>> {
         // An identifier followed by a dot is the start of frame property access.
         else if tokens.peek().is_some_and(|(k, _)| *k == TokenKind::Dot) {
           tokens.next(); // Consume dot.
-          let (prop_kind, prop_text) = tokens
-            .next()
-            .ok_or(CranexprError::MissingFramePropertyName)?;
+          let (prop_kind, prop_text) = tokens.next().ok_or(ParseError::MissingFramePropertyName)?;
           if prop_kind != TokenKind::Ident {
-            return Err(CranexprError::PropertyNameNotAnIdentifier);
+            return Err(ParseError::PropertyNameNotAnIdentifier);
           }
           stack.push(Expr::Prop(text.to_string(), prop_text.to_string()));
         }
@@ -200,7 +204,7 @@ pub(crate) fn parse_expr(expr: &str) -> CranexprResult<Vec<Expr>> {
           let new_len = stack
             .len()
             .checked_sub(steps)
-            .ok_or(CranexprError::DropOutOfBounds)?;
+            .ok_or(ParseError::DropOutOfBounds)?;
           stack.truncate(new_len);
         }
         // Duplicates the topmost stack value.
@@ -213,8 +217,8 @@ pub(crate) fn parse_expr(expr: &str) -> CranexprResult<Vec<Expr>> {
           let idx = stack
             .len()
             .checked_sub(steps + 1)
-            .ok_or(CranexprError::DupOutOfBounds)?;
-          let to_dupe = stack.get(idx).ok_or(CranexprError::DupOutOfBounds)?;
+            .ok_or(ParseError::DupOutOfBounds)?;
+          let to_dupe = stack.get(idx).ok_or(ParseError::DupOutOfBounds)?;
           stack.push(to_dupe.clone());
         }
         // `swapN` allows a value N steps up in the stack to be swapped.
@@ -226,7 +230,7 @@ pub(crate) fn parse_expr(expr: &str) -> CranexprResult<Vec<Expr>> {
           let idx = stack
             .len()
             .checked_sub(steps + 1)
-            .ok_or(CranexprError::SwapOutOfBounds)?;
+            .ok_or(ParseError::SwapOutOfBounds)?;
           let len = stack.len();
           stack.swap(idx, len - 1);
         }
@@ -234,7 +238,7 @@ pub(crate) fn parse_expr(expr: &str) -> CranexprResult<Vec<Expr>> {
         // named `var`.
         else if tokens.peek().is_some_and(|(k, _)| *k == TokenKind::Bang) {
           tokens.next(); // Consume `!`.
-          let value = stack.pop().ok_or(CranexprError::StackUnderflow)?;
+          let value = stack.pop().ok_or(ParseError::StackUnderflow)?;
           stack.push(Expr::Store(text.to_string(), Box::new(value)));
         }
         // `var@`: Pushes the value of the variable `var` onto the stack.
@@ -277,8 +281,11 @@ pub(crate) fn parse_expr(expr: &str) -> CranexprResult<Vec<Expr>> {
           .peek()
           .is_some_and(|(token_kind, _)| matches!(token_kind, TokenKind::Literal { .. }))
         {
-          let (_, text) = tokens.next().unwrap();
-          stack.push(Expr::Lit(0.0 - text.parse::<f32>().unwrap()));
+          let (_, text) = tokens.next().ok_or(ParseError::StackUnderflow)?;
+          let value = text
+            .parse::<f32>()
+            .map_err(|_| ParseError::InvalidLiteral(text.to_string()))?;
+          stack.push(Expr::Lit(0.0 - value));
         } else {
           add_binary_op(&mut stack, BinOp::Sub)?;
         }
@@ -292,13 +299,13 @@ pub(crate) fn parse_expr(expr: &str) -> CranexprResult<Vec<Expr>> {
       TokenKind::Question => {
         // Ternary follows the pattern `A B C ?`, which evaluates to `B` if
         // `A > 0`, and `C` otherwise.
-        let no = stack.pop().ok_or(CranexprError::StackUnderflow)?;
-        let yes = stack.pop().ok_or(CranexprError::StackUnderflow)?;
-        let cond = stack.pop().ok_or(CranexprError::StackUnderflow)?;
+        let no = stack.pop().ok_or(ParseError::StackUnderflow)?;
+        let yes = stack.pop().ok_or(ParseError::StackUnderflow)?;
+        let cond = stack.pop().ok_or(ParseError::StackUnderflow)?;
 
         stack.push(Expr::IfElse(Box::new(cond), Box::new(yes), Box::new(no)));
       }
-      _ => return Err(CranexprError::UnrecognizedToken(text.to_string())),
+      _ => return Err(ParseError::UnrecognizedToken(text.to_string())),
     }
   }
 
@@ -306,16 +313,16 @@ pub(crate) fn parse_expr(expr: &str) -> CranexprResult<Vec<Expr>> {
     // All expressions before the final one must be side effects.
     for expr in preceding_exprs {
       if !matches!(expr, Expr::Store(..)) {
-        return Err(CranexprError::ExpressionDoesNotEvaluateToSingleValue);
+        return Err(ParseError::ExpressionDoesNotEvaluateToSingleValue);
       }
     }
 
     // Last expression must not be a side effect.
     if matches!(last_expr, Expr::Store(..)) {
-      return Err(CranexprError::ExpressionEvaluatesToNothing);
+      return Err(ParseError::ExpressionEvaluatesToNothing);
     }
   } else {
-    return Err(CranexprError::ExpressionEvaluatesToNothing);
+    return Err(ParseError::ExpressionEvaluatesToNothing);
   }
 
   Ok(stack)

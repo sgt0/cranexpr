@@ -1,0 +1,16 @@
+[package]
+name = "cranexpr-parser"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+cranexpr-ast = { workspace = true }
+cranexpr-lexer = { workspace = true }
+thiserror = "=2.0.18"
+
+[dev-dependencies]
+insta = { version = "=1.47.2", features = ["yaml"] }
+rstest = "=0.26.1"
+
+[lints]
+workspace = true

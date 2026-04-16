@@ -1,5 +1,5 @@
 ---
-source: src/parser/mod.rs
+source: crates/cranexpr-parser/src/lib.rs
 expression: "parse_expr(\"x 2 / my_var! my_var@ my_var@ *\").unwrap()"
 ---
 - Store:
