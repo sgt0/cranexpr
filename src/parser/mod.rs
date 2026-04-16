@@ -1,12 +1,11 @@
-pub(crate) mod ast;
 pub(crate) mod visit;
 
+use cranexpr_ast::{BinOp, Expr, TernaryOp, UnOp};
 use cranexpr_lexer::{TokenKind, tokenize_with_text};
 
 use crate::{
   BoundaryMode,
   errors::{CranexprError, CranexprResult},
-  parser::ast::{BinOp, Expr, TernaryOp, UnOp},
 };
 
 fn add_unary_op(stack: &mut Vec<Expr>, op: UnOp) -> CranexprResult<()> {

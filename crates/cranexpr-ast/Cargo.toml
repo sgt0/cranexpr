@@ -1,0 +1,17 @@
+[package]
+name = "cranexpr-ast"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+num-derive = "=0.4.2"
+num-traits = "=0.2.19"
+serde = { version = "=1.0.228", features = ["derive"] }
+strum = "=0.28.0"
+strum_macros = "=0.28.0"
+
+[lints]
+workspace = true
+
+[package.metadata.cargo-shear]
+ignored = ["num-traits", "strum"]

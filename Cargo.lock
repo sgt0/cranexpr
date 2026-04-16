@@ -301,20 +301,28 @@ dependencies = [
  "cranelift-jit",
  "cranelift-module",
  "cranelift-native",
+ "cranexpr-ast",
  "cranexpr-lexer",
  "insta",
  "miette",
  "nanoid",
  "ndarray",
- "num-derive",
  "num-traits",
  "rstest",
- "serde",
- "strum",
- "strum_macros",
  "thiserror",
  "vapours",
  "vapoursynth4-rs",
+]
+
+[[package]]
+name = "cranexpr-ast"
+version = "0.3.0"
+dependencies = [
+ "num-derive",
+ "num-traits",
+ "serde",
+ "strum",
+ "strum_macros",
 ]
 
 [[package]]
