@@ -3,7 +3,7 @@
 use cranexpr_ast::{BinOp, Expr, TernaryOp, UnOp};
 
 /// A trait for AST visitors. Visits all nodes in the AST recursively.
-pub(crate) trait Visitor<'a>: Sized {
+pub trait Visitor<'a>: Sized {
   fn visit_expr(&mut self, expr: &'a Expr) {
     walk_expr(self, expr);
   }
@@ -30,7 +30,7 @@ pub(crate) trait Visitor<'a>: Sized {
   }
 }
 
-fn walk_expr<'a, V: Visitor<'a>>(visitor: &mut V, expr: &'a Expr) {
+pub fn walk_expr<'a, V: Visitor<'a>>(visitor: &mut V, expr: &'a Expr) {
   match expr {
     Expr::Ident(ident) => {
       visitor.visit_ident(ident);

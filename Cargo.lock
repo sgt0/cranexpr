@@ -303,6 +303,7 @@ dependencies = [
  "cranelift-native",
  "cranexpr-ast",
  "cranexpr-lexer",
+ "cranexpr-transforms",
  "insta",
  "miette",
  "nanoid",
@@ -332,6 +333,15 @@ dependencies = [
  "insta",
  "rstest",
  "serde",
+]
+
+[[package]]
+name = "cranexpr-transforms"
+version = "0.3.0"
+dependencies = [
+ "cranexpr-ast",
+ "miette",
+ "thiserror",
 ]
 
 [[package]]

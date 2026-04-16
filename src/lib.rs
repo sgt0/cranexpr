@@ -2,7 +2,6 @@ mod codegen;
 mod component_type;
 mod errors;
 mod parser;
-mod prop_visitor;
 
 use const_str::cstr;
 use cranexpr_ast::BoundaryMode;
@@ -29,9 +28,8 @@ use crate::{
   codegen::{MainFunction, compiler::compile_jit},
   component_type::ComponentType,
   errors::CranexprError,
-  parser::visit::Visitor,
-  prop_visitor::PropVisitor,
 };
+use cranexpr_transforms::{PropVisitor, Visitor};
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 enum PlaneOp {
@@ -145,7 +143,7 @@ impl Filter for CranexprFilter {
       }
 
       if let Some(err) = visitor.error {
-        return Err(err);
+        return Err(err.into());
       }
 
       let required_props: Vec<(usize, String)> = visitor.props.into_iter().collect();

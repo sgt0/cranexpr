@@ -24,8 +24,8 @@ pub enum CranexprError {
   #[error("Expression does not evaluate to a single value.")]
   ExpressionDoesNotEvaluateToSingleValue,
 
-  #[error("Invalid clip identifier '{0}'.")]
-  InvalidClipIdentifier(String),
+  #[error(transparent)]
+  Transform(#[from] cranexpr_transforms::TransformError),
 
   #[error("Invalid frame property name '{0}'.")]
   InvalidFramePropertyName(String),

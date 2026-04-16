@@ -1,6 +1,7 @@
 use std::collections::BTreeSet;
 
-use crate::{errors::CranexprError, parser};
+use crate::errors::TransformError;
+use crate::visit::Visitor;
 
 fn shorthand_to_clip_idx(name: &str) -> Option<usize> {
   if name.len() == 1 {
@@ -19,14 +20,15 @@ fn shorthand_to_clip_idx(name: &str) -> Option<usize> {
   None
 }
 
-pub(crate) struct PropVisitor {
-  pub(crate) props: BTreeSet<(usize, String)>,
-  pub(crate) error: Option<CranexprError>,
+pub struct PropVisitor {
+  pub props: BTreeSet<(usize, String)>,
+  pub error: Option<TransformError>,
   num_inputs: usize,
 }
 
 impl PropVisitor {
-  pub(crate) const fn new(num_inputs: usize) -> Self {
+  #[must_use]
+  pub const fn new(num_inputs: usize) -> Self {
     Self {
       props: BTreeSet::new(),
       num_inputs,
@@ -35,7 +37,7 @@ impl PropVisitor {
   }
 }
 
-impl<'a> parser::visit::Visitor<'a> for PropVisitor {
+impl<'a> Visitor<'a> for PropVisitor {
   fn visit_prop(&mut self, name: &'a str, prop: &'a str) {
     if self.error.is_some() {
       return;
@@ -46,7 +48,7 @@ impl<'a> parser::visit::Visitor<'a> for PropVisitor {
     {
       self.props.insert((idx, prop.to_string()));
     } else {
-      self.error = Some(CranexprError::InvalidClipIdentifier(name.to_string()));
+      self.error = Some(TransformError::InvalidClipIdentifier(name.to_string()));
     }
   }
 }
