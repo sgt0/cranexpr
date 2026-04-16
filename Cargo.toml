@@ -1,7 +1,20 @@
-[package]
-name = "cranexpr"
+[workspace]
+members = [
+  "crates/cranexpr-lexer"
+]
+resolver = "3"
+
+[workspace.package]
 version = "0.3.0"
 edition = "2024"
+
+[workspace.dependencies]
+cranexpr-lexer = { path = "crates/cranexpr-lexer" }
+
+[package]
+name = "cranexpr"
+version.workspace = true
+edition.workspace = true
 
 [lib]
 crate-type = ["cdylib"]
@@ -24,6 +37,8 @@ cranelift-jit = "=0.130.1"
 cranelift-module = "=0.130.1"
 cranelift-native = "=0.130.1"
 
+cranexpr-lexer = { workspace = true }
+
 [dev-dependencies]
 approx = "=0.5.1"
 insta = { version = "=1.47.2", features = ["yaml"] }
@@ -42,7 +57,7 @@ lto = true
 inherits = "release"
 debug = true
 
-[lints.rust]
+[workspace.lints.rust]
 deprecated_safe = "warn"
 improper_ctypes = "warn"
 improper_ctypes_definitions = "warn"
@@ -54,7 +69,7 @@ unnameable_types = "warn"
 unreachable_pub = { level = "allow", priority = 1 }
 unsafe_op_in_unsafe_fn = "warn"
 
-[lints.clippy]
+[workspace.lints.clippy]
 all = { level = "warn", priority = -1 }
 nursery = { level = "warn", priority = -1 }
 pedantic = { level = "warn", priority = -1 }
@@ -75,6 +90,9 @@ similar_names = { level = "allow", priority = 1 }
 too_many_arguments = { level = "allow", priority = 1 }
 too_many_lines = { level = "allow", priority = 1 }
 unreadable_literal = { level = "allow", priority = 1 }
+
+[lints]
+workspace = true
 
 [package.metadata.cargo-shear]
 ignored = ["strum"]

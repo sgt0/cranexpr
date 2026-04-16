@@ -1,5 +1,5 @@
 ---
-source: src/lexer/mod.rs
+source: src/lib.rs
 expression: "tokenize(\"x._Combed\").collect::<Vec<_>>()"
 ---
 - kind: Ident

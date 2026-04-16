@@ -1,0 +1,14 @@
+[package]
+name = "cranexpr-lexer"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+serde = { version = "=1.0.228", features = ["derive"] }
+
+[dev-dependencies]
+insta = { version = "=1.47.2", features = ["yaml"] }
+rstest = "=0.26.1"
+
+[lints]
+workspace = true

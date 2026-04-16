@@ -1,5 +1,5 @@
 ---
-source: src/lexer/mod.rs
+source: src/lib.rs
 expression: "lex(\"a b c ?\")"
 ---
 - kind: Ident

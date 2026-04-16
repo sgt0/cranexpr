@@ -4,11 +4,11 @@ mod cursor;
 
 use serde::Serialize;
 
-use crate::lexer::cursor::Cursor;
+use crate::cursor::Cursor;
 
 /// Enum representing common lexeme types.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
-pub(crate) enum TokenKind {
+pub enum TokenKind {
   /// Any whitespace character sequence.
   Whitespace,
 
@@ -67,7 +67,7 @@ pub(crate) enum TokenKind {
 /// It doesn't contain information about data that has been parsed,
 /// only the type of the token and its size.
 #[derive(Debug, Serialize)]
-pub(crate) struct Token {
+pub struct Token {
   pub kind: TokenKind,
   pub len: u32,
 }
@@ -80,7 +80,7 @@ impl Token {
 
 /// Base of numeric literal encoding according to its prefix.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize)]
-pub(crate) enum Base {
+pub enum Base {
   /// Literal starts with "0b".
   Binary = 2,
   /// Literal starts with "0o".
@@ -93,7 +93,7 @@ pub(crate) enum Base {
 
 /// Enum representing the literal types supported by the lexer.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize)]
-pub(crate) enum LiteralKind {
+pub enum LiteralKind {
   /// `12_u8`, `0o100`, `0b120i99`, `1f32`.
   Int { base: Base, empty_int: bool },
   /// `12.34f32`, `1e3`, but not `1f32`.
@@ -111,7 +111,8 @@ const fn is_id_continue(c: char) -> bool {
 }
 
 /// True if `c` is considered a whitespace character.
-pub(crate) const fn is_whitespace(c: char) -> bool {
+#[must_use]
+pub const fn is_whitespace(c: char) -> bool {
   matches!(
     c,
     // Usual ASCII suspects.
@@ -354,7 +355,7 @@ impl Cursor<'_> {
 }
 
 /// Creates an iterator that produces tokens from the input string.
-pub(crate) fn tokenize(input: &str) -> impl Iterator<Item = Token> {
+pub fn tokenize(input: &str) -> impl Iterator<Item = Token> {
   let mut cursor = Cursor::new(input);
   std::iter::from_fn(move || {
     let token = cursor.advance_token();
@@ -367,7 +368,7 @@ pub(crate) fn tokenize(input: &str) -> impl Iterator<Item = Token> {
 }
 
 /// Tokenizes the input while keeping the text associated with each token.
-pub(crate) fn tokenize_with_text(s: &str) -> impl Iterator<Item = (TokenKind, &str)> {
+pub fn tokenize_with_text(s: &str) -> impl Iterator<Item = (TokenKind, &str)> {
   let mut pos = 0;
   tokenize(s).map(move |t| {
     let end = pos + t.len;

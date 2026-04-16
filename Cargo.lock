@@ -301,6 +301,7 @@ dependencies = [
  "cranelift-jit",
  "cranelift-module",
  "cranelift-native",
+ "cranexpr-lexer",
  "insta",
  "miette",
  "nanoid",
@@ -314,6 +315,15 @@ dependencies = [
  "thiserror",
  "vapours",
  "vapoursynth4-rs",
+]
+
+[[package]]
+name = "cranexpr-lexer"
+version = "0.3.0"
+dependencies = [
+ "insta",
+ "rstest",
+ "serde",
 ]
 
 [[package]]
