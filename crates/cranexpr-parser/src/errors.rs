@@ -30,6 +30,9 @@ pub enum ParseError {
   #[error("Attempt to swap out of bounds.")]
   SwapOutOfBounds,
 
+  #[error("Reference to uninitialized variable: {0}@")]
+  UninitializedVariable(String),
+
   #[error("Unrecognized token: {0}")]
   UnrecognizedToken(String),
 }

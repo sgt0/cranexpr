@@ -245,6 +245,15 @@ pub fn parse_expr(expr: &str) -> Result<Vec<Expr>, ParseError> {
         // `var@`: Pushes the value of the variable `var` onto the stack.
         else if tokens.peek().is_some_and(|(k, _)| *k == TokenKind::At) {
           tokens.next(); // Consume `@`.
+
+          // Assert that the variable has been previously initialized by a
+          // `var!` expression.
+          if !side_effects
+            .iter()
+            .any(|e| matches!(e, Expr::Store(name, _) if name == text))
+          {
+            return Err(ParseError::UninitializedVariable(text.to_string()));
+          }
           stack.push(Expr::Load(text.to_string()));
         } else {
           match text {
@@ -390,5 +399,11 @@ mod tests {
       parse_expr("7 6 5 4 3 2 1 0 dup4 max_val! dup3 min_val! drop8 x min_val@ max_val@ clamp")
         .unwrap()
     );
+  }
+
+  #[rstest]
+  fn test_load_before_store_is_error() {
+    let err = parse_expr("foo@ x 2 * foo!").unwrap_err();
+    assert_eq!(err.to_string(), "Reference to uninitialized variable: foo@");
   }
 }
