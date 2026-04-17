@@ -6,7 +6,7 @@ use cranexpr_ast::BoundaryMode;
 use num_traits::FromPrimitive;
 use std::{
   ffi::{CStr, c_void},
-  ptr, slice,
+  ptr,
 };
 use vapours::{frame::VapoursVideoFrame, generic::HoldsVideoFormat};
 use vapoursynth4_rs::{
@@ -265,12 +265,11 @@ impl Filter for CranexprFilter {
 
           let expr = unsafe { expr.as_ref().unwrap_unchecked() };
 
-          let src_slices = src.iter().map(|f| {
-            let plane_idx = plane_idx as i32;
-            let len = f.frame_height(plane_idx) as usize * f.stride(plane_idx) as usize;
-            let ptr = f.as_slice::<u8>(plane_idx).as_ptr();
-            unsafe { slice::from_raw_parts(ptr, len) }
-          });
+          let src_ptrs: Vec<*const u8> = src.iter().map(|f| f.plane(plane_idx as i32)).collect();
+          let src_strides: Vec<i64> = src
+            .iter()
+            .map(|f| f.stride(plane_idx as i32) as i64)
+            .collect();
 
           let mut frame_props = Vec::with_capacity(self.required_frame_props[plane_idx].len());
           for (i, (clip_idx, _)) in self.required_frame_props[plane_idx].iter().enumerate() {
@@ -293,12 +292,16 @@ impl Filter for CranexprFilter {
             frame_props.push(val);
           }
 
+          let dst_stride = dst.stride(plane_idx as i32) as i64;
+
           match self.vi.sample_type() {
             SampleType::Integer => match self.vi.format.bytes_per_sample {
               1 => unsafe {
                 expr.invoke(
                   dst.as_mut_slice::<u8>(plane_idx as i32),
-                  src_slices.clone(),
+                  dst_stride,
+                  &src_ptrs,
+                  &src_strides,
                   width,
                   height,
                   n,
@@ -308,7 +311,9 @@ impl Filter for CranexprFilter {
               2 => unsafe {
                 expr.invoke(
                   dst.as_mut_slice::<u16>(plane_idx as i32),
-                  src_slices.clone(),
+                  dst_stride,
+                  &src_ptrs,
+                  &src_strides,
                   width,
                   height,
                   n,
@@ -320,7 +325,9 @@ impl Filter for CranexprFilter {
             SampleType::Float => unsafe {
               expr.invoke(
                 dst.as_mut_slice::<f32>(plane_idx as i32),
-                src_slices.clone(),
+                dst_stride,
+                &src_ptrs,
+                &src_strides,
                 width,
                 height,
                 n,
