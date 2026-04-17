@@ -37,6 +37,7 @@ pub(crate) struct FunctionCx<'m, 'clif> {
 
   // For relative pixel access
   pub(crate) src_clips: Pointer,
+  pub(crate) src_strides: Pointer,
   pub(crate) width: Value,
   pub(crate) height: Value,
 }
@@ -118,9 +119,9 @@ fn create_entry_fn(
   let main_sig = Signature {
     params: vec![
       AbiParam::new(pointer_type), // Destination buffer pointer.
-      AbiParam::new(types::I64),   // Destination buffer length.
+      AbiParam::new(types::I64),   // Destination stride.
       AbiParam::new(pointer_type), // Sources buffer pointer.
-      AbiParam::new(types::I64),   // Sources buffer length.
+      AbiParam::new(pointer_type), // Source strides array pointer.
       AbiParam::new(types::I64),   // Destination plane width.
       AbiParam::new(types::I64),   // Destination plane height.
       AbiParam::new(types::I64),   // Current frame number (N).
@@ -147,7 +148,7 @@ fn create_entry_fn(
     bcx.switch_to_block(block);
     bcx.append_block_params_for_function_params(block);
 
-    let (dest_ptr, dest_len, src_ptrs, _src_len, width, height, n, props_ptr) = {
+    let (dest_ptr, dst_stride, src_ptrs, src_strides_ptr, width, height, n, props_ptr) = {
       let params = bcx.block_params(block);
       (
         params[0], params[1], params[2], params[3], params[4], params[5], params[6], params[7],
@@ -168,6 +169,7 @@ fn create_entry_fn(
       pointer_type,
       boundary_mode: boundary_mode.unwrap_or(BoundaryMode::Clamp),
       src_clips: Pointer::new(src_ptrs),
+      src_strides: Pointer::new(src_strides_ptr),
       width,
       height,
     };
@@ -195,73 +197,81 @@ fn create_entry_fn(
         .insert(format!("prop_{clip_idx}_{prop_name}"), var);
     }
 
-    codegen_for_loop(&mut fx, start_idx, dest_len, step, |fx, idx| {
-      // Set up loop-variant variables.
-
-      // X = idx % width, Y = idx / width
-      let x_coord = fx.bcx.ins().urem(idx, width);
-      let y_coord = fx.bcx.ins().udiv(idx, width);
-      codegen_variable(fx, "X", x_coord);
+    codegen_for_loop(&mut fx, start_idx, height, step, |fx, y_coord| {
       codegen_variable(fx, "Y", y_coord);
 
-      for (var_idx, src_type) in src_types.iter().enumerate() {
-        // srcN
-        let src_ptr_val = Pointer::new(src_ptrs)
-          .offset(fx, Offset32::new(var_idx as i32 * pointer_size))
-          .load(fx, pointer_type, SRC_MEMFLAGS);
-        let src_ptr = Pointer::new(src_ptr_val);
+      codegen_for_loop(fx, start_idx, width, step, |fx, x_coord| {
+        codegen_variable(fx, "X", x_coord);
 
-        // srcN[idx]
-        let offset = fx.bcx.ins().imul_imm(idx, src_type.bytes() as i64);
-        let pixel_ptr = src_ptr.offset_value(fx, offset);
-        let val = pixel_ptr.load(fx, (*src_type).into(), SRC_MEMFLAGS);
+        for (var_idx, src_type) in src_types.iter().enumerate() {
+          // srcN pointer
+          let src_ptr_val = Pointer::new(src_ptrs)
+            .offset(fx, Offset32::new(var_idx as i32 * pointer_size))
+            .load(fx, pointer_type, SRC_MEMFLAGS);
+          let src_ptr = Pointer::new(src_ptr_val);
 
-        // Convert to float.
-        let val = match src_type {
-          ComponentType::U8 | ComponentType::U16 => fx.bcx.ins().fcvt_from_uint(types::F32, val),
-          ComponentType::F32 => val,
+          // srcN stride
+          let src_stride = Pointer::new(src_strides_ptr)
+            .offset(fx, Offset32::new(var_idx as i32 * 8))
+            .load(fx, types::I64, SRC_MEMFLAGS);
+
+          // pixel_offset = y * stride + x * bytes_per_sample
+          let row_offset = fx.bcx.ins().imul(y_coord, src_stride);
+          let col_offset = fx.bcx.ins().imul_imm(x_coord, src_type.bytes() as i64);
+          let pixel_offset = fx.bcx.ins().iadd(row_offset, col_offset);
+          let pixel_ptr = src_ptr.offset_value(fx, pixel_offset);
+          let val = pixel_ptr.load(fx, (*src_type).into(), SRC_MEMFLAGS);
+
+          // Convert to float.
+          let val = match src_type {
+            ComponentType::U8 | ComponentType::U16 => fx.bcx.ins().fcvt_from_uint(types::F32, val),
+            ComponentType::F32 => val,
+          };
+
+          // Store it in a variable.
+          let var = fx.bcx.declare_var(types::F32);
+          fx.bcx.def_var(var, val);
+          fx.variables.insert(format!("src{var_idx}"), var);
+        }
+
+        // Evaluate expressions.
+
+        let expr_val = if let Some((last_expr, preceding_exprs)) = ast.split_last() {
+          // Evaluate all preceding expressions first for any side effects.
+          for expr in preceding_exprs {
+            translate_expr(fx, expr)?;
+          }
+
+          // Last expression is expected to evaluate to the final result.
+          translate_expr(fx, last_expr)?
+        } else {
+          return Err(cranexpr_parser::ParseError::ExpressionEvaluatesToNothing.into());
         };
 
-        // Store it in a variable.
-        let var = fx.bcx.declare_var(types::F32);
-        fx.bcx.def_var(var, val);
-        fx.variables.insert(format!("src{var_idx}"), var);
-      }
+        // Convert output floats to integers if necessary.
+        let expr_val = match dst_type {
+          ComponentType::U8 | ComponentType::U16 => {
+            let zero = fx.bcx.ins().f32const(0.0);
+            let peak_value = fx.bcx.ins().f32const(dst_type.peak_value());
 
-      // Evaluate expressions.
+            let mut clamped = fx.bcx.ins().fmin(expr_val, peak_value);
+            clamped = fx.bcx.ins().fmax(clamped, zero);
 
-      let expr_val = if let Some((last_expr, preceding_exprs)) = ast.split_last() {
-        // Evaluate all preceding expressions first for any side effects.
-        for expr in preceding_exprs {
-          translate_expr(fx, expr)?;
-        }
+            fx.bcx.ins().fcvt_to_uint_sat(types::I32, clamped)
+          }
+          ComponentType::F32 => expr_val,
+        };
 
-        // Last expression is expected to evaluate to the final result.
-        translate_expr(fx, last_expr)?
-      } else {
-        return Err(cranexpr_parser::ParseError::ExpressionEvaluatesToNothing.into());
-      };
+        // dest_offset = y * dst_stride + x * bytes_per_sample
+        let dest_row_offset = fx.bcx.ins().imul(y_coord, dst_stride);
+        let dest_col_offset = fx.bcx.ins().imul_imm(x_coord, dst_type.bytes() as i64);
+        let dest_offset = fx.bcx.ins().iadd(dest_row_offset, dest_col_offset);
+        dest_ptr
+          .offset_value(fx, dest_offset)
+          .store(fx, expr_val, MemFlags::new());
 
-      // Convert output floats to integers if necessary.
-      let expr_val = match dst_type {
-        ComponentType::U8 | ComponentType::U16 => {
-          let zero = fx.bcx.ins().f32const(0.0);
-          let peak_value = fx.bcx.ins().f32const(dst_type.peak_value());
-
-          let mut clamped = fx.bcx.ins().fmin(expr_val, peak_value);
-          clamped = fx.bcx.ins().fmax(clamped, zero);
-
-          fx.bcx.ins().fcvt_to_uint_sat(types::I32, clamped)
-        }
-        ComponentType::F32 => expr_val,
-      };
-
-      let dest_offset = fx.bcx.ins().imul_imm(idx, dst_type.bytes() as i64);
-      dest_ptr
-        .offset_value(fx, dest_offset)
-        .store(fx, expr_val, MemFlags::new());
-
-      Ok(())
+        Ok(())
+      })
     })?;
 
     fx.bcx.ins().return_(&[]);
@@ -342,7 +352,7 @@ fn codegen_variable<K: Into<String>>(fx: &mut FunctionCx<'_, '_>, name: K, data:
 
 #[cfg(test)]
 mod tests {
-  use std::{f32::consts::PI, slice};
+  use std::f32::consts::PI;
 
   use approx::assert_relative_eq;
   use ndarray::{Array2, array};
@@ -365,12 +375,23 @@ mod tests {
     let src_slice = src.as_slice_memory_order().expect("src not contiguous");
     let dst_slice = dst.as_slice_memory_order_mut().expect("dst not contiguous");
 
-    let src_bytes_len = std::mem::size_of_val(src_slice);
-    let src_bytes =
-      unsafe { slice::from_raw_parts(src_slice.as_ptr().cast::<u8>(), src_bytes_len) };
+    let bytes_per_sample = std::mem::size_of::<T>() as i64;
+    let stride = width as i64 * bytes_per_sample;
+    let src_ptr = src_slice.as_ptr().cast::<u8>();
+    let src_ptrs = [src_ptr];
+    let src_strides = [stride];
 
     unsafe {
-      compiled.invoke(dst_slice, &[src_bytes], width as i32, height as i32, 0, &[]);
+      compiled.invoke(
+        dst_slice,
+        stride,
+        &src_ptrs,
+        &src_strides,
+        width as i32,
+        height as i32,
+        0,
+        &[],
+      );
     }
 
     dst
@@ -497,19 +518,13 @@ mod tests {
     let mut actual = [0.0f32];
     let x = [3.0f32];
     let y = [17.0f32];
+    let bytes_per_sample = std::mem::size_of::<f32>() as i64;
     unsafe {
       compiled.invoke(
         &mut actual,
-        &[
-          slice::from_raw_parts(
-            x.as_ptr().cast::<u8>(),
-            x.len() * types::F32.bytes() as usize,
-          ),
-          slice::from_raw_parts(
-            y.as_ptr().cast::<u8>(),
-            y.len() * types::F32.bytes() as usize,
-          ),
-        ],
+        bytes_per_sample,
+        &[x.as_ptr().cast::<u8>(), y.as_ptr().cast::<u8>()],
+        &[bytes_per_sample, bytes_per_sample],
         1,
         1,
         0,
@@ -539,20 +554,14 @@ mod tests {
     let x = [3.0f32];
     let y = [17.0f32];
     let frame_props = [0.5f32, 1.5f32];
+    let bytes_per_sample = std::mem::size_of::<f32>() as i64;
 
     unsafe {
       compiled.invoke(
         &mut actual,
-        &[
-          slice::from_raw_parts(
-            x.as_ptr().cast::<u8>(),
-            x.len() * types::F32.bytes() as usize,
-          ),
-          slice::from_raw_parts(
-            y.as_ptr().cast::<u8>(),
-            y.len() * types::F32.bytes() as usize,
-          ),
-        ],
+        bytes_per_sample,
+        &[x.as_ptr().cast::<u8>(), y.as_ptr().cast::<u8>()],
+        &[bytes_per_sample, bytes_per_sample],
         1,
         1,
         0,
@@ -663,6 +672,100 @@ mod tests {
   }
 
   #[rstest]
+  fn test_rel_access_with_var_store_load() {
+    let src = array![
+      [0.0f32, 0.1, 0.2, 0.3],
+      [0.4, 0.5, 0.6, 0.7],
+      [0.8, 0.9, 0.1, 0.2]
+    ];
+    let dst = run_expr_ndarray(
+      "x[-1,-1] x[0,-1] x[1,-1] x[-1,0] x[1,0] x[-1,1] x[0,1] x[1,1] dup4 max_val! dup3 min_val! drop8 x min_val@ max_val@ clamp",
+      &src,
+    );
+    assert_relative_eq!(dst[[1, 0]], 0.5);
+    assert_relative_eq!(dst[[1, 1]], 0.6);
+  }
+
+  #[rstest]
+  fn test_strided_pixel_access() {
+    let width = 3i32;
+    let height = 2i32;
+    let stride: i64 = 16;
+
+    let src_data: [f32; 8] = [1.0, 2.0, 3.0, 99.0, 4.0, 5.0, 6.0, 99.0];
+    let mut dst_data: [f32; 8] = [0.0; 8];
+
+    let ast = cranexpr_parser::parse_expr("x").unwrap();
+    let compiled = compile_jit(&ast, ComponentType::F32, &[ComponentType::F32], None, &[])
+      .expect("should compile");
+
+    let src_ptrs = [src_data.as_ptr().cast::<u8>()];
+    let src_strides = [stride];
+
+    unsafe {
+      compiled.invoke(
+        &mut dst_data,
+        stride,
+        &src_ptrs,
+        &src_strides,
+        width,
+        height,
+        0,
+        &[],
+      );
+    }
+
+    assert_relative_eq!(dst_data[0], 1.0);
+    assert_relative_eq!(dst_data[1], 2.0);
+    assert_relative_eq!(dst_data[2], 3.0);
+    // dst_data[3] is padding.
+    assert_relative_eq!(dst_data[4], 4.0);
+    assert_relative_eq!(dst_data[5], 5.0);
+    assert_relative_eq!(dst_data[6], 6.0);
+  }
+
+  #[rstest]
+  fn test_strided_rel_access() {
+    let width = 3i32;
+    let height = 3i32;
+    let stride: i64 = 16;
+
+    // [1.0, 2.0, 3.0, _]
+    // [4.0, 5.0, 6.0, _]
+    // [7.0, 8.0, 9.0, _]
+    let src_data: [f32; 12] = [
+      1.0, 2.0, 3.0, 99.0, 4.0, 5.0, 6.0, 99.0, 7.0, 8.0, 9.0, 99.0,
+    ];
+    let mut dst_data: [f32; 12] = [0.0; 12];
+
+    let ast = cranexpr_parser::parse_expr("x[1,0]").unwrap();
+    let compiled = compile_jit(&ast, ComponentType::F32, &[ComponentType::F32], None, &[])
+      .expect("should compile");
+
+    let src_ptrs = [src_data.as_ptr().cast::<u8>()];
+    let src_strides = [stride];
+
+    unsafe {
+      compiled.invoke(
+        &mut dst_data,
+        stride,
+        &src_ptrs,
+        &src_strides,
+        width,
+        height,
+        0,
+        &[],
+      );
+    }
+
+    assert_relative_eq!(dst_data[0], 2.0);
+    assert_relative_eq!(dst_data[1], 3.0);
+    assert_relative_eq!(dst_data[2], 3.0);
+    assert_relative_eq!(dst_data[4], 5.0);
+    assert_relative_eq!(dst_data[5], 6.0);
+  }
+
+  #[rstest]
   #[case("10 0 20 clip", 10.0)]
   #[case("-10 0 20 clip", 0.0)]
   #[case("30 0 20 clip", 20.0)]
@@ -703,11 +806,14 @@ mod tests {
       .expect("should compile expr");
 
     let mut actual = [0u16];
+    let bytes_per_sample = std::mem::size_of::<u16>() as i64;
 
     unsafe {
       compiled.invoke(
         &mut actual,
-        &[slice::from_raw_parts(x.as_ptr().cast::<u8>(), x.len())],
+        bytes_per_sample,
+        &[x.as_ptr().cast::<u8>()],
+        &[bytes_per_sample],
         1,
         1,
         0,

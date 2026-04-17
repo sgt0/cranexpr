@@ -142,24 +142,13 @@ pub(crate) fn translate_expr(
       let clamped_x = codegen_boundary_mode(fx, x_int, fx.width, boundary_mode);
       let clamped_y = codegen_boundary_mode(fx, y_int, fx.height, boundary_mode);
 
-      // idx = y * width + x
-      let y_times_width = fx.bcx.ins().imul(clamped_y, fx.width);
-      let target_idx = fx.bcx.ins().iadd(y_times_width, clamped_x);
-
-      // Load source pointer for this clip.
-      let pointer_size = fx.pointer_type.bytes() as i32;
-      let src_ptr_val = fx
-        .src_clips
-        .offset(fx, Offset32::new(clip_idx as i32 * pointer_size))
-        .load(fx, fx.pointer_type, SRC_MEMFLAGS);
-      let src_ptr = Pointer::new(src_ptr_val);
-
-      // Calculate byte offset for the pixel.
-      let pixel_offset = fx.bcx.ins().imul_imm(target_idx, src_type.bytes() as i64);
-      let pixel_ptr = src_ptr.offset_value(fx, pixel_offset);
+      let (src_ptr, pixel_offset) =
+        codegen_pixel_offset(fx, clip_idx, clamped_x, clamped_y, src_type);
 
       // Load pixel value.
-      let val = pixel_ptr.load(fx, src_type.into(), SRC_MEMFLAGS);
+      let val = src_ptr
+        .offset_value(fx, pixel_offset)
+        .load(fx, src_type.into(), SRC_MEMFLAGS);
 
       // Convert to float.
       let val = match src_type {
@@ -206,24 +195,13 @@ pub(crate) fn translate_expr(
       let clamped_x = codegen_boundary_mode(fx, target_x, fx.width, boundary_mode);
       let clamped_y = codegen_boundary_mode(fx, target_y, fx.height, boundary_mode);
 
-      // idx = y * width + x
-      let y_times_width = fx.bcx.ins().imul(clamped_y, fx.width);
-      let target_idx = fx.bcx.ins().iadd(y_times_width, clamped_x);
-
-      // Load source pointer for this clip.
-      let pointer_size = fx.pointer_type.bytes() as i32;
-      let src_ptr_val = fx
-        .src_clips
-        .offset(fx, Offset32::new(clip_idx as i32 * pointer_size))
-        .load(fx, fx.pointer_type, SRC_MEMFLAGS);
-      let src_ptr = Pointer::new(src_ptr_val);
-
-      // Calculate byte offset for the pixel.
-      let pixel_offset = fx.bcx.ins().imul_imm(target_idx, src_type.bytes() as i64);
-      let pixel_ptr = src_ptr.offset_value(fx, pixel_offset);
+      let (src_ptr, pixel_offset) =
+        codegen_pixel_offset(fx, clip_idx, clamped_x, clamped_y, src_type);
 
       // Load pixel value.
-      let val = pixel_ptr.load(fx, src_type.into(), SRC_MEMFLAGS);
+      let val = src_ptr
+        .offset_value(fx, pixel_offset)
+        .load(fx, src_type.into(), SRC_MEMFLAGS);
 
       // Convert to float.
       let val = match src_type {
@@ -238,6 +216,36 @@ pub(crate) fn translate_expr(
       Ok(fx.bcx.use_var(var))
     }
   }
+}
+
+/// Computes the byte offset for a pixel at (x, y).
+fn codegen_pixel_offset(
+  fx: &mut FunctionCx<'_, '_>,
+  clip_idx: usize,
+  x: Value,
+  y: Value,
+  src_type: ComponentType,
+) -> (Pointer, Value) {
+  // Load source pointer for this clip.
+  let pointer_size = fx.pointer_type.bytes() as i32;
+  let src_ptr_val = fx
+    .src_clips
+    .offset(fx, Offset32::new(clip_idx as i32 * pointer_size))
+    .load(fx, fx.pointer_type, SRC_MEMFLAGS);
+  let src_ptr = Pointer::new(src_ptr_val);
+
+  // Load stride for this clip.
+  let src_stride = fx
+    .src_strides
+    .offset(fx, Offset32::new(clip_idx as i32 * 8))
+    .load(fx, types::I64, SRC_MEMFLAGS);
+
+  // pixel_offset = y * stride + x * bytes_per_sample
+  let row_offset = fx.bcx.ins().imul(y, src_stride);
+  let col_offset = fx.bcx.ins().imul_imm(x, src_type.bytes() as i64);
+  let pixel_offset = fx.bcx.ins().iadd(row_offset, col_offset);
+
+  (src_ptr, pixel_offset)
 }
 
 /// Resolves a clip name (e.g., "x", "y", "src0") to a clip index.

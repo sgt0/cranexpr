@@ -8,7 +8,7 @@ mod translate;
 pub use compiler::compile_jit;
 
 type MainFunc =
-  unsafe extern "C" fn(*mut u8, i64, *const *const u8, i64, i64, i64, i64, *const f32);
+  unsafe extern "C" fn(*mut u8, i64, *const *const u8, *const i64, i64, i64, i64, *const f32);
 
 #[derive(Debug)]
 pub struct MainFunction {
@@ -27,29 +27,21 @@ impl MainFunction {
   /// The caller must ensure that `dst`, `srcs`, and `frame_props` are valid
   /// and that the types match those used during compilation.
   #[inline]
-  pub unsafe fn invoke<D, S, I>(
+  pub unsafe fn invoke<D>(
     &self,
     dst: &mut [D],
-    srcs: I,
+    dst_stride: i64,
+    srcs: &[*const u8],
+    src_strides: &[i64],
     width: i32,
     height: i32,
     n: i32,
     frame_props: &[f32],
-  ) where
-    S: AsRef<[u8]>,
-    I: IntoIterator<Item = S>,
-    I::IntoIter: ExactSizeIterator,
-  {
+  ) {
     debug_assert!(width > 0, "width must be greater than 0");
     debug_assert!(height > 0, "height must be greater than 0");
 
     let dst_ptr = dst.as_mut_ptr().cast::<u8>();
-    let dst_len = dst.len() as i64;
-
-    let srcs_iter = srcs.into_iter();
-    let srcs_len = srcs_iter.len() as i64;
-    let srcs_ptrs: Vec<*const u8> = srcs_iter.map(|s| s.as_ref().as_ptr()).collect();
-    let srcs_ptr = srcs_ptrs.as_ptr();
 
     let frame_props_ptr = if frame_props.is_empty() {
       std::ptr::null()
@@ -61,9 +53,9 @@ impl MainFunction {
     unsafe {
       func(
         dst_ptr,
-        dst_len,
-        srcs_ptr.cast(),
-        srcs_len,
+        dst_stride,
+        srcs.as_ptr(),
+        src_strides.as_ptr(),
         i64::from(width),
         i64::from(height),
         i64::from(n),
