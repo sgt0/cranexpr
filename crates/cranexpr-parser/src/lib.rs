@@ -33,6 +33,7 @@ fn add_ternary_op(stack: &mut Vec<Expr>, op: TernaryOp) -> Result<(), ParseError
 /// Returns a [`ParseError`] if the expression is malformed.
 pub fn parse_expr(expr: &str) -> Result<Vec<Expr>, ParseError> {
   let mut stack = Vec::new();
+  let mut side_effects = Vec::new();
 
   // We don't filter out whitespace tokens because they're significant when it
   // comes to differentiating between subtraction (`x - y`) and
@@ -239,7 +240,7 @@ pub fn parse_expr(expr: &str) -> Result<Vec<Expr>, ParseError> {
         else if tokens.peek().is_some_and(|(k, _)| *k == TokenKind::Bang) {
           tokens.next(); // Consume `!`.
           let value = stack.pop().ok_or(ParseError::StackUnderflow)?;
-          stack.push(Expr::Store(text.to_string(), Box::new(value)));
+          side_effects.push(Expr::Store(text.to_string(), Box::new(value)));
         }
         // `var@`: Pushes the value of the variable `var` onto the stack.
         else if tokens.peek().is_some_and(|(k, _)| *k == TokenKind::At) {
@@ -309,23 +310,15 @@ pub fn parse_expr(expr: &str) -> Result<Vec<Expr>, ParseError> {
     }
   }
 
-  if let Some((last_expr, preceding_exprs)) = stack.split_last() {
-    // All expressions before the final one must be side effects.
-    for expr in preceding_exprs {
-      if !matches!(expr, Expr::Store(..)) {
-        return Err(ParseError::ExpressionDoesNotEvaluateToSingleValue);
-      }
-    }
-
-    // Last expression must not be a side effect.
-    if matches!(last_expr, Expr::Store(..)) {
+  if stack.len() != 1 {
+    if stack.is_empty() {
       return Err(ParseError::ExpressionEvaluatesToNothing);
     }
-  } else {
-    return Err(ParseError::ExpressionEvaluatesToNothing);
+    return Err(ParseError::ExpressionDoesNotEvaluateToSingleValue);
   }
 
-  Ok(stack)
+  side_effects.extend(stack);
+  Ok(side_effects)
 }
 
 #[cfg(test)]
@@ -389,5 +382,13 @@ mod tests {
   #[rstest]
   fn test_variables() {
     assert_yaml_snapshot!(parse_expr("x 2 / my_var! my_var@ my_var@ *").unwrap());
+  }
+
+  #[rstest]
+  fn test_store_does_not_affect_stack() {
+    assert_yaml_snapshot!(
+      parse_expr("7 6 5 4 3 2 1 0 dup4 max_val! dup3 min_val! drop8 x min_val@ max_val@ clamp")
+        .unwrap()
+    );
   }
 }

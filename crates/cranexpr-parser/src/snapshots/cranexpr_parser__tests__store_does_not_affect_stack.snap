@@ -1,0 +1,15 @@
+---
+source: crates/cranexpr-parser/src/lib.rs
+expression: "parse_expr(\"7 6 5 4 3 2 1 0 dup4 max_val! dup3 min_val! drop8 x min_val@ max_val@ clamp\").unwrap()"
+---
+- Store:
+    - max_val
+    - Lit: 4
+- Store:
+    - min_val
+    - Lit: 3
+- Ternary:
+    - Clip
+    - Ident: x
+    - Load: min_val
+    - Load: max_val
