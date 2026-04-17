@@ -653,6 +653,16 @@ mod tests {
   }
 
   #[rstest]
+  fn test_store_does_not_affect_stack_indices() {
+    let src = array![[0.2f32]];
+    let dst = run_expr_ndarray(
+      "7 6 5 4 3 2 1 0 dup4 max_val! dup3 min_val! drop8 x min_val@ max_val@ clamp",
+      &src,
+    );
+    assert_relative_eq!(dst[[0, 0]], 3.0);
+  }
+
+  #[rstest]
   #[case("10 0 20 clip", 10.0)]
   #[case("-10 0 20 clip", 0.0)]
   #[case("30 0 20 clip", 20.0)]
