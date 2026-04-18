@@ -82,6 +82,7 @@ pub(crate) fn translate_expr(
         UnOp::Tangent => translate_float_intrinsic_call(fx, "tanf", &[x]),
         UnOp::Sine => translate_float_intrinsic_call(fx, "sinf", &[x]),
         UnOp::Sqrt => fx.bcx.ins().sqrt(x),
+        UnOp::Trunc => fx.bcx.ins().trunc(x),
       })
     }
 

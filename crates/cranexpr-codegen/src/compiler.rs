@@ -598,6 +598,16 @@ mod tests {
   }
 
   #[rstest]
+  #[case("1.2 trunc", 1.0)]
+  #[case("1.8 trunc", 1.0)]
+  #[case("-1.2 trunc", -1.0)]
+  #[case("-1.8 trunc", -1.0)]
+  #[case("3.0 trunc", 3.0)]
+  fn test_trunc(#[case] expr: &str, #[case] expected: f32) {
+    assert_relative_eq!(run_expr(expr), expected);
+  }
+
+  #[rstest]
   #[case("5 2 %", 1.0)]
   #[case("1.2 1.0 %", 0.2)]
   #[case("-5 2 %", -1.0)]
