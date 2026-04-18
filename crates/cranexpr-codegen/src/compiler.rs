@@ -650,6 +650,18 @@ mod tests {
   }
 
   #[rstest]
+  #[case("3 1 2 sort3 + +", 6.0)]
+  #[case("3 1 2 sort3 drop drop", 3.0)]
+  #[case("3 1 2 sort3 drop2", 3.0)]
+  #[case("5 3 sort2 -", 2.0)]
+  #[case("5 3 sort2 /", 5.0 / 3.0)]
+  #[case("4 1 3 2 sort4 + + +", 10.0)]
+  #[case("4 1 3 2 sort4 drop drop drop", 4.0)]
+  fn test_sort(#[case] expr: &str, #[case] expected: f32) {
+    assert_relative_eq!(run_expr(expr), expected);
+  }
+
+  #[rstest]
   #[case("4 dup0 * sqrt", 4.0)]
   #[case("5 dup * dup *", 625.0)]
   #[case("10 20 dup1 + /", 1.0 / 3.0)]

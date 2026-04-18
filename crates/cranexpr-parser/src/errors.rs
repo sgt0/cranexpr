@@ -18,6 +18,9 @@ pub enum ParseError {
   #[error("Invalid literal: {0}")]
   InvalidLiteral(String),
 
+  #[error("Invalid sort size: {0}")]
+  InvalidSortSize(String),
+
   #[error("Missing frame property name.")]
   MissingFramePropertyName,
 
@@ -26,6 +29,9 @@ pub enum ParseError {
 
   #[error("Stack underflow.")]
   StackUnderflow,
+
+  #[error("Attempt to sort out of bounds.")]
+  SortOutOfBounds,
 
   #[error("Attempt to swap out of bounds.")]
   SwapOutOfBounds,
