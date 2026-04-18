@@ -101,6 +101,9 @@ pub enum UnOp {
   /// The square root function.
   #[strum(serialize = "sqrt")]
   Sqrt,
+  /// The truncate operator.
+  #[strum(serialize = "trunc")]
+  Trunc,
 
   #[strum(serialize = "sin")]
   Sine,

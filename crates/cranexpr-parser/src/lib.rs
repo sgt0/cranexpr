@@ -295,6 +295,7 @@ pub fn parse_expr(expr: &str) -> Result<Vec<Expr>, ParseError> {
             "sqrt" => add_unary_op(&mut stack, UnOp::Sqrt),
             "sin" => add_unary_op(&mut stack, UnOp::Sine),
             "tan" => add_unary_op(&mut stack, UnOp::Tangent),
+            "trunc" => add_unary_op(&mut stack, UnOp::Trunc),
             "cos" => add_unary_op(&mut stack, UnOp::Cosine),
             "clip" | "clamp" => add_ternary_op(&mut stack, TernaryOp::Clip),
             "atan2" => add_binary_op(&mut stack, BinOp::Atan2),
