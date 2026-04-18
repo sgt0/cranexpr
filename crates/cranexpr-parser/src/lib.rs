@@ -1,4 +1,5 @@
 mod errors;
+mod sorting_network;
 
 pub use errors::ParseError;
 
@@ -234,6 +235,30 @@ pub fn parse_expr(expr: &str) -> Result<Vec<Expr>, ParseError> {
             .ok_or(ParseError::SwapOutOfBounds)?;
           let len = stack.len();
           stack.swap(idx, len - 1);
+        }
+        // `sortN` pops N values from the stack, sorts them, and pushes them
+        // back in descending order (smallest on top).
+        else if let Some(count) = text.strip_prefix("sort") {
+          let count = count
+            .parse::<usize>()
+            .map_err(|_| ParseError::InvalidSortSize(text.to_string()))?;
+          let pairs = sorting_network::sorting_network(count)
+            .ok_or_else(|| ParseError::InvalidSortSize(text.to_string()))?;
+          if stack.len() < count {
+            return Err(ParseError::SortOutOfBounds);
+          }
+          let start = stack.len() - count;
+          // Apply each comparator pair as a min/max swap on the Expr stack.
+          // Each (i, j) becomes: vals[i] = min(vals[i], vals[j]),
+          //                      vals[j] = max(vals[i], vals[j]).
+          for &(i, j) in &pairs {
+            let si = start + i;
+            let sj = start + j;
+            let a = stack[si].clone();
+            let b = stack[sj].clone();
+            stack[si] = Expr::Binary(BinOp::Max, Box::new(a.clone()), Box::new(b.clone()));
+            stack[sj] = Expr::Binary(BinOp::Min, Box::new(a), Box::new(b));
+          }
         }
         // `var!`: Pops the top value from the stack and stores it in a variable
         // named `var`.
