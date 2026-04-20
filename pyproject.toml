@@ -1,6 +1,6 @@
 [project]
 name = "vapoursynth-cranexpr"
-version = "0.3.0"
+version = "0.4.0"
 description = "VapourSynth expr plugin built on top of Cranelift."
 readme = "README.md"
 requires-python = ">=3.12"
