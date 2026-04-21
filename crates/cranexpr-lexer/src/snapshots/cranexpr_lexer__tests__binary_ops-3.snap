@@ -1,0 +1,14 @@
+---
+source: crates/cranexpr-lexer/src/lib.rs
+expression: "lex(\"a b >=\")"
+---
+- kind: Ident
+  len: 1
+- kind: Whitespace
+  len: 1
+- kind: Ident
+  len: 1
+- kind: Whitespace
+  len: 1
+- kind: Gte
+  len: 2

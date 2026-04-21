@@ -37,8 +37,12 @@ pub enum TokenKind {
   Minus,
   /// `<`
   Lt,
+  /// `<=`
+  Lte,
   /// `>`
   Gt,
+  /// `>=`
+  Gte,
   /// `%`
   Percent,
   /// `!`
@@ -169,8 +173,22 @@ impl Cursor<'_> {
       '+' => TokenKind::Plus,
       '*' => TokenKind::Star,
       '/' => TokenKind::Slash,
-      '<' => TokenKind::Lt,
-      '>' => TokenKind::Gt,
+      '<' => {
+        if self.first() == '=' {
+          self.bump();
+          TokenKind::Lte
+        } else {
+          TokenKind::Lt
+        }
+      }
+      '>' => {
+        if self.first() == '=' {
+          self.bump();
+          TokenKind::Gte
+        } else {
+          TokenKind::Gt
+        }
+      }
       '%' => TokenKind::Percent,
       '!' => TokenKind::Bang,
       '@' => TokenKind::At,
@@ -412,6 +430,8 @@ mod tests {
   fn test_binary_ops() {
     assert_yaml_snapshot!(lex("d e <"));
     assert_yaml_snapshot!(lex("a b ="));
+    assert_yaml_snapshot!(lex("a b >="));
+    assert_yaml_snapshot!(lex("a b <="));
   }
 
   #[rstest]

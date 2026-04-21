@@ -360,10 +360,12 @@ fn codegen_float_binop(fx: &mut FunctionCx<'_, '_>, op: BinOp, lhs: Value, rhs: 
     BinOp::Div => fx.bcx.ins().fdiv(lhs, rhs),
     BinOp::Pow => translate_float_intrinsic_call(fx, "powf", &[lhs, rhs]),
     BinOp::Rem => translate_float_intrinsic_call(fx, "fmodf", &[lhs, rhs]),
-    BinOp::Gt | BinOp::Lt | BinOp::Eq => {
+    BinOp::Gt | BinOp::Gte | BinOp::Lt | BinOp::Lte | BinOp::Eq => {
       let float_cc = match op {
         BinOp::Gt => FloatCC::GreaterThan,
+        BinOp::Gte => FloatCC::GreaterThanOrEqual,
         BinOp::Lt => FloatCC::LessThan,
+        BinOp::Lte => FloatCC::LessThanOrEqual,
         BinOp::Eq => FloatCC::Equal,
         _ => unreachable!("{:?}({:?}, {:?})", op, lhs, rhs),
       };
