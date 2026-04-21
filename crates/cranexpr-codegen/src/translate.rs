@@ -389,6 +389,13 @@ fn codegen_float_binop(fx: &mut FunctionCx<'_, '_>, op: BinOp, lhs: Value, rhs: 
       let result = fx.bcx.ins().bor(lhs_bool, rhs_bool);
       bool_to_float(fx, result)
     }
+    BinOp::Xor => {
+      let zero = fx.bcx.ins().f32const(0.0);
+      let lhs_bool = fx.bcx.ins().fcmp(FloatCC::GreaterThan, lhs, zero);
+      let rhs_bool = fx.bcx.ins().fcmp(FloatCC::GreaterThan, rhs, zero);
+      let result = fx.bcx.ins().bxor(lhs_bool, rhs_bool);
+      bool_to_float(fx, result)
+    }
     BinOp::BitAnd | BinOp::BitOr | BinOp::BitXor => {
       let lhs_rounded = fx.bcx.ins().nearest(lhs);
       let rhs_rounded = fx.bcx.ins().nearest(rhs);

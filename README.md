@@ -29,7 +29,7 @@ core.cranexpr.Expr([x], "x[-1,-1] x[0,-1] x[1,-1] x[-1,0] x x[1,0] x[-1,1] x[0,1
 - Arithmetic: `+`, `-`, `*`, `/`, `%`, `pow`, `exp`, `log`, `sqrt`.
 - Trigonometry: `sin`, `cos`, `tan`, `atan2`.
 - Comparison: `>`, `<`, `=`, `>=`, `<=`.
-- Logical: `and`, `or`, `not`.
+- Logical: `and`, `or`, `xor`, `not`.
 - Bitwise: `bitand`, `bitor`, `bitxor`, `bitnot`.
 - Clamping: `min`, `max`, `clip` (alias: `clamp`).
 - Rounding: `floor`, `round`, `trunc`.
