@@ -331,7 +331,9 @@ pub fn parse_expr(expr: &str) -> Result<Vec<Expr>, ParseError> {
       TokenKind::Star => add_binary_op(&mut stack, BinOp::Mul)?,
       TokenKind::Slash => add_binary_op(&mut stack, BinOp::Div)?,
       TokenKind::Gt => add_binary_op(&mut stack, BinOp::Gt)?,
+      TokenKind::Gte => add_binary_op(&mut stack, BinOp::Gte)?,
       TokenKind::Lt => add_binary_op(&mut stack, BinOp::Lt)?,
+      TokenKind::Lte => add_binary_op(&mut stack, BinOp::Lte)?,
       TokenKind::Eq => add_binary_op(&mut stack, BinOp::Eq)?,
       TokenKind::Percent => add_binary_op(&mut stack, BinOp::Rem)?,
       TokenKind::Question => {
@@ -414,6 +416,16 @@ mod tests {
   #[rstest]
   fn test_eq_op() {
     assert_yaml_snapshot!(parse_expr("x y =").unwrap());
+  }
+
+  #[rstest]
+  fn test_gte_op() {
+    assert_yaml_snapshot!(parse_expr("x y >=").unwrap());
+  }
+
+  #[rstest]
+  fn test_lte_op() {
+    assert_yaml_snapshot!(parse_expr("x y <=").unwrap());
   }
 
   #[rstest]

@@ -45,6 +45,12 @@ pub enum BinOp {
   /// The `=` operator (equal to)
   #[strum(serialize = "=")]
   Eq,
+  /// The `>=` operator (greater than or equal to)
+  #[strum(serialize = ">=")]
+  Gte,
+  /// The `<=` operator (less than or equal to)
+  #[strum(serialize = "<=")]
+  Lte,
 
   /// The `max` operator (maximum)
   #[strum(serialize = "max")]
