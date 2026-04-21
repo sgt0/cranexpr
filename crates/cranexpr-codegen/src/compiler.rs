@@ -873,6 +873,28 @@ mod tests {
   }
 
   #[rstest]
+  #[case("1 1 and", 1.0)]
+  #[case("1 0 and", 0.0)]
+  #[case("0 1 and", 0.0)]
+  #[case("0 0 and", 0.0)]
+  #[case("-1 1 and", 0.0)]
+  #[case("5 3 and", 1.0)]
+  fn test_and(#[case] expr: &str, #[case] expected: f32) {
+    assert_relative_eq!(run_expr(expr), expected);
+  }
+
+  #[rstest]
+  #[case("1 1 or", 1.0)]
+  #[case("1 0 or", 1.0)]
+  #[case("0 1 or", 1.0)]
+  #[case("0 0 or", 0.0)]
+  #[case("-1 1 or", 1.0)]
+  #[case("-1 0 or", 0.0)]
+  fn test_or(#[case] expr: &str, #[case] expected: f32) {
+    assert_relative_eq!(run_expr(expr), expected);
+  }
+
+  #[rstest]
   #[case("5 3 bitand", 1.0)] // 101 & 011 = 001 (1)
   #[case("5.2 2.8 bitand", 1.0)] // 5 & 3 = 1
   #[case("6 3 bitor", 7.0)] // 110 | 011 = 111 (7)

@@ -1,0 +1,15 @@
+---
+source: crates/cranexpr-parser/src/lib.rs
+assertion_line: 422
+expression: "parse_expr(\"x 0 > y 0 > or\").unwrap()"
+---
+- Binary:
+    - Or
+    - Binary:
+        - Gt
+        - Ident: x
+        - Lit: 0
+    - Binary:
+        - Gt
+        - Ident: y
+        - Lit: 0
