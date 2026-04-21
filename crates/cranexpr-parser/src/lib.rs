@@ -303,6 +303,8 @@ pub fn parse_expr(expr: &str) -> Result<Vec<Expr>, ParseError> {
             "bitor" => add_binary_op(&mut stack, BinOp::BitOr),
             "bitxor" => add_binary_op(&mut stack, BinOp::BitXor),
             "bitnot" => add_unary_op(&mut stack, UnOp::BitNot),
+            "and" => add_binary_op(&mut stack, BinOp::And),
+            "or" => add_binary_op(&mut stack, BinOp::Or),
             _ => {
               stack.push(Expr::Ident(text.to_string()));
               Ok(())
@@ -412,6 +414,12 @@ mod tests {
   #[rstest]
   fn test_eq_op() {
     assert_yaml_snapshot!(parse_expr("x y =").unwrap());
+  }
+
+  #[rstest]
+  fn test_and_or() {
+    assert_yaml_snapshot!(parse_expr("x 0 > y 0 > and").unwrap());
+    assert_yaml_snapshot!(parse_expr("x 0 > y 0 > or").unwrap());
   }
 
   #[rstest]

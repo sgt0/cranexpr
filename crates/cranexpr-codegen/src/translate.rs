@@ -373,6 +373,20 @@ fn codegen_float_binop(fx: &mut FunctionCx<'_, '_>, op: BinOp, lhs: Value, rhs: 
     BinOp::Max => fx.bcx.ins().fmax(lhs, rhs),
     BinOp::Min => fx.bcx.ins().fmin(lhs, rhs),
     BinOp::Atan2 => codegen_atan2(fx, lhs, rhs),
+    BinOp::And => {
+      let zero = fx.bcx.ins().f32const(0.0);
+      let lhs_bool = fx.bcx.ins().fcmp(FloatCC::GreaterThan, lhs, zero);
+      let rhs_bool = fx.bcx.ins().fcmp(FloatCC::GreaterThan, rhs, zero);
+      let result = fx.bcx.ins().band(lhs_bool, rhs_bool);
+      bool_to_float(fx, result)
+    }
+    BinOp::Or => {
+      let zero = fx.bcx.ins().f32const(0.0);
+      let lhs_bool = fx.bcx.ins().fcmp(FloatCC::GreaterThan, lhs, zero);
+      let rhs_bool = fx.bcx.ins().fcmp(FloatCC::GreaterThan, rhs, zero);
+      let result = fx.bcx.ins().bor(lhs_bool, rhs_bool);
+      bool_to_float(fx, result)
+    }
     BinOp::BitAnd | BinOp::BitOr | BinOp::BitXor => {
       let lhs_rounded = fx.bcx.ins().nearest(lhs);
       let rhs_rounded = fx.bcx.ins().nearest(rhs);

@@ -66,6 +66,13 @@ pub enum BinOp {
   /// Bitwise XOR
   #[strum(serialize = "bitxor")]
   BitXor,
+
+  /// Logical AND
+  #[strum(serialize = "and")]
+  And,
+  /// Logical OR
+  #[strum(serialize = "or")]
+  Or,
 }
 
 /// Unary operator.
