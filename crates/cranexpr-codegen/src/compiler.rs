@@ -256,6 +256,7 @@ fn create_entry_fn(
 
             let mut clamped = fx.bcx.ins().fmin(expr_val, peak_value);
             clamped = fx.bcx.ins().fmax(clamped, zero);
+            clamped = fx.bcx.ins().nearest(clamped);
 
             fx.bcx.ins().fcvt_to_uint_sat(types::I32, clamped)
           }
@@ -843,6 +844,32 @@ mod tests {
       );
     };
     assert_eq!(actual[0], 65535);
+  }
+
+  #[rstest]
+  fn test_integer_format_round() {
+    let x = [0u8];
+    let ast = cranexpr_parser::parse_expr("1.65").unwrap();
+
+    let compiled = compile_jit(&ast, ComponentType::U8, &[ComponentType::U8], None, &[])
+      .expect("should compile expr");
+
+    let mut actual = [0u8];
+    let bytes_per_sample = std::mem::size_of::<u8>() as i64;
+
+    unsafe {
+      compiled.invoke(
+        &mut actual,
+        bytes_per_sample,
+        &[x.as_ptr().cast::<u8>()],
+        &[bytes_per_sample],
+        1,
+        1,
+        0,
+        &[],
+      );
+    };
+    assert_eq!(actual[0], 2);
   }
 
   #[rstest]
