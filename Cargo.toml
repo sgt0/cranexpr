@@ -1,6 +1,7 @@
 [workspace]
 members = [
   "crates/cranexpr-ast",
+  "crates/cranexpr-cli",
   "crates/cranexpr-codegen",
   "crates/cranexpr-lexer",
   "crates/cranexpr-parser",
