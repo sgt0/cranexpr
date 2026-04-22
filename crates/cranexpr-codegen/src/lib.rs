@@ -1,3 +1,4 @@
+pub mod comment_writer;
 pub mod component_type;
 pub mod errors;
 
@@ -5,7 +6,7 @@ mod compiler;
 mod pointer;
 mod translate;
 
-pub use compiler::compile_jit;
+pub use compiler::{compile_clif, compile_jit};
 
 type MainFunc =
   unsafe extern "C" fn(*mut u8, i64, *const *const u8, *const i64, i64, i64, i64, *const f32);

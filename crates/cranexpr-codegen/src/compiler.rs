@@ -5,6 +5,7 @@ use std::sync::Arc;
 use cranelift::codegen::ir::immediates::Offset32;
 use cranelift::codegen::isa::TargetIsa;
 use cranelift::codegen::print_errors::pretty_error;
+use cranelift::codegen::write::decorate_function;
 use cranelift::prelude::*;
 use cranelift::{codegen::Context, prelude::FunctionBuilderContext};
 use cranelift_jit::{JITBuilder, JITModule};
@@ -13,6 +14,7 @@ use cranexpr_ast::{BoundaryMode, Expr};
 use nanoid::nanoid;
 
 use crate::MainFunction;
+use crate::comment_writer::CommentWriter;
 use crate::component_type::ComponentType;
 use crate::errors::{CodegenError, CodegenResult};
 use crate::pointer::Pointer;
@@ -40,6 +42,14 @@ pub(crate) struct FunctionCx<'m, 'clif> {
   pub(crate) src_strides: Pointer,
   pub(crate) width: Value,
   pub(crate) height: Value,
+
+  pub(crate) comments: CommentWriter,
+}
+
+struct BuiltEntryFn {
+  func_id: FuncId,
+  ctx: Context,
+  comments: CommentWriter,
 }
 
 fn build_isa() -> Arc<dyn TargetIsa + 'static> {
@@ -91,7 +101,7 @@ pub fn compile_jit(
   required_frame_props: &[(usize, String)],
 ) -> Result<MainFunction, CodegenError> {
   let mut jit_module = create_jit_module();
-  let main_func_id = create_entry_fn(
+  let mut main_func = build_entry_fn(
     &mut jit_module,
     ast,
     dst_type,
@@ -99,20 +109,58 @@ pub fn compile_jit(
     boundary_mode,
     required_frame_props,
   )?;
+
+  if let Err(err) = jit_module.define_function(main_func.func_id, &mut main_func.ctx) {
+    let err_msg = match err {
+      ModuleError::Compilation(source) => pretty_error(&main_func.ctx.func, source),
+      _ => err.to_string(),
+    };
+    return Err(CodegenError::CompilationError(err_msg));
+  }
+
   jit_module.finalize_definitions().unwrap();
 
-  let finalized_main = jit_module.get_finalized_function(main_func_id);
+  let finalized_main = jit_module.get_finalized_function(main_func.func_id);
   Ok(MainFunction::from_ptr(finalized_main))
 }
 
-fn create_entry_fn(
+/// Compiles an expression AST and returns the pretty-printed Cranelift IR with
+/// comments.
+///
+/// # Errors
+///
+/// Returns a [`CodegenError`] if the expression cannot be compiled.
+pub fn compile_clif(
+  ast: &[Expr],
+  dst_type: ComponentType,
+  src_types: &[ComponentType],
+  boundary_mode: Option<BoundaryMode>,
+  required_frame_props: &[(usize, String)],
+) -> Result<String, CodegenError> {
+  let mut jit_module = create_jit_module();
+  let mut built = build_entry_fn(
+    &mut jit_module,
+    ast,
+    dst_type,
+    src_types,
+    boundary_mode,
+    required_frame_props,
+  )?;
+
+  let mut output = String::new();
+  decorate_function(&mut built.comments, &mut output, &built.ctx.func)
+    .map_err(|err| CodegenError::CompilationError(err.to_string()))?;
+  Ok(output)
+}
+
+fn build_entry_fn(
   m: &mut dyn Module,
   ast: &[Expr],
   dst_type: ComponentType,
   src_types: &[ComponentType],
   boundary_mode: Option<BoundaryMode>,
   required_frame_props: &[(usize, String)],
-) -> CodegenResult<FuncId> {
+) -> CodegenResult<BuiltEntryFn> {
   let pointer_type = m.target_config().pointer_type();
   let pointer_size = pointer_type.bytes() as i32;
 
@@ -140,6 +188,7 @@ fn create_entry_fn(
 
   let mut ctx = Context::new();
   ctx.func.signature = main_sig;
+  let comments;
   {
     let mut func_ctx = FunctionBuilderContext::new();
     let mut bcx = FunctionBuilder::new(&mut ctx.func, &mut func_ctx);
@@ -172,6 +221,7 @@ fn create_entry_fn(
       src_strides: Pointer::new(src_strides_ptr),
       width,
       height,
+      comments: CommentWriter::new(),
     };
 
     // Constants.
@@ -278,19 +328,14 @@ fn create_entry_fn(
     fx.bcx.ins().return_(&[]);
     fx.bcx.seal_all_blocks();
     fx.bcx.finalize();
+    comments = fx.comments;
   }
 
-  if let Err(err) = m.define_function(main_func_id, &mut ctx) {
-    let err_msg = match err {
-      ModuleError::Compilation(source) => pretty_error(&ctx.func, source),
-      _ => err.to_string(),
-    };
-    return Err(CodegenError::CompilationError(err_msg));
-  }
-
-  // println!("{}", ctx.func.display());
-
-  Ok(main_func_id)
+  Ok(BuiltEntryFn {
+    func_id: main_func_id,
+    ctx,
+    comments,
+  })
 }
 
 fn codegen_for_loop(
