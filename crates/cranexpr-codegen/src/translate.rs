@@ -28,6 +28,7 @@ pub(crate) fn translate_expr(
         .expect("frame property variable not defined");
       Ok(fx.bcx.use_var(*variable))
     }
+    Expr::Binary(BinOp::Pow, base, exponent) => Ok(codegen_pow(fx, base, exponent)?),
     Expr::Binary(op, lhs, rhs) => {
       let lhs = translate_expr(fx, lhs)?;
       let rhs = translate_expr(fx, rhs)?;
@@ -358,7 +359,6 @@ fn codegen_float_binop(fx: &mut FunctionCx<'_, '_>, op: BinOp, lhs: Value, rhs: 
     BinOp::Sub => fx.bcx.ins().fsub(lhs, rhs),
     BinOp::Mul => fx.bcx.ins().fmul(lhs, rhs),
     BinOp::Div => fx.bcx.ins().fdiv(lhs, rhs),
-    BinOp::Pow => translate_float_intrinsic_call(fx, "powf", &[lhs, rhs]),
     BinOp::Rem => translate_float_intrinsic_call(fx, "fmodf", &[lhs, rhs]),
     BinOp::Gt | BinOp::Gte | BinOp::Lt | BinOp::Lte | BinOp::Eq => {
       let float_cc = match op {
@@ -409,6 +409,7 @@ fn codegen_float_binop(fx: &mut FunctionCx<'_, '_>, op: BinOp, lhs: Value, rhs: 
       };
       fx.bcx.ins().fcvt_from_sint(types::F32, res_i)
     }
+    BinOp::Pow => unreachable!("pow is handled by codegen_pow"),
   }
 }
 
@@ -416,6 +417,68 @@ fn bool_to_float(fx: &mut FunctionCx<'_, '_>, value: Value) -> Value {
   let one = fx.bcx.ins().f32const(1.0);
   let zero = fx.bcx.ins().f32const(0.0);
   fx.bcx.ins().select(value, one, zero)
+}
+
+/// Strength-reduce `pow` for small non-negative integer exponents and 0.5;
+/// fall back to the `powf` libcall otherwise.
+fn codegen_pow(
+  fx: &mut FunctionCx<'_, '_>,
+  base: &Expr,
+  exponent: &Expr,
+) -> Result<Value, CodegenError> {
+  let base_val = translate_expr(fx, base)?;
+
+  #[allow(clippy::float_cmp, clippy::cast_precision_loss)]
+  if let Expr::Lit(exp) = exponent {
+    if *exp == 0.0 {
+      return Ok(fx.bcx.ins().f32const(1.0));
+    }
+    if *exp == 1.0 {
+      return Ok(base_val);
+    }
+    if *exp == 2.0 {
+      return Ok(fx.bcx.ins().fmul(base_val, base_val));
+    }
+    if *exp == 0.5 {
+      return Ok(fx.bcx.ins().sqrt(base_val));
+    }
+
+    // For small non-negative integer exponents (3..=8), emit a chain of
+    // multiplications. Reuse intermediary squares to keep the chain short.
+    let exp_u32 = *exp as u32;
+    if *exp == exp_u32 as f32 && (3..=8).contains(&exp_u32) {
+      let x2 = fx.bcx.ins().fmul(base_val, base_val);
+      return Ok(match exp_u32 {
+        3 => fx.bcx.ins().fmul(x2, base_val),
+        4 => fx.bcx.ins().fmul(x2, x2),
+        5 => {
+          let x4 = fx.bcx.ins().fmul(x2, x2);
+          fx.bcx.ins().fmul(x4, base_val)
+        }
+        6 => {
+          let x3 = fx.bcx.ins().fmul(x2, base_val);
+          fx.bcx.ins().fmul(x3, x3)
+        }
+        7 => {
+          let x3 = fx.bcx.ins().fmul(x2, base_val);
+          let x6 = fx.bcx.ins().fmul(x3, x3);
+          fx.bcx.ins().fmul(x6, base_val)
+        }
+        8 => {
+          let x4 = fx.bcx.ins().fmul(x2, x2);
+          fx.bcx.ins().fmul(x4, x4)
+        }
+        _ => unreachable!(),
+      });
+    }
+  }
+
+  let rhs_val = translate_expr(fx, exponent)?;
+  Ok(translate_float_intrinsic_call(
+    fx,
+    "powf",
+    &[base_val, rhs_val],
+  ))
 }
 
 // Benchmarked to be faster than calling the `atan2f` intrinsic.
