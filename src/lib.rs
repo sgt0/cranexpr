@@ -1,10 +1,12 @@
 mod component_type;
 mod errors;
 mod expr;
+mod select;
 
 use vapoursynth4_rs::declare_plugin;
 
 use crate::expr::CranexprFilter;
+use crate::select::SelectFilter;
 
 declare_plugin!(
   c"sgt.cranexpr",
@@ -13,5 +15,6 @@ declare_plugin!(
   (0, 4),
   VAPOURSYNTH_API_VERSION,
   0,
-  (CranexprFilter, None)
+  (CranexprFilter, None),
+  (SelectFilter, None)
 );
