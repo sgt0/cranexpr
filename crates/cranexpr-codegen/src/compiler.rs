@@ -14,6 +14,7 @@ use cranexpr_ast::{BoundaryMode, Expr};
 use nanoid::nanoid;
 
 use crate::MainFunction;
+use crate::SelectFunction;
 use crate::comment_writer::CommentWriter;
 use crate::component_type::ComponentType;
 use crate::errors::{CodegenError, CodegenResult};
@@ -151,6 +152,45 @@ pub fn compile_clif(
   decorate_function(&mut built.comments, &mut output, &built.ctx.func)
     .map_err(|err| CodegenError::CompilationError(err.to_string()))?;
   Ok(output)
+}
+
+/// Compiles an expression AST into a JIT-compiled function that evaluates the
+/// expression once.
+///
+/// The expression must not reference any pixel-access identifiers, relative or
+/// absolute pixel access, nor per-pixel context variables. Callers should
+/// validate this via something like [`PixelAccessVisitor`] prior to compilation.
+///
+/// The `num_prop_clips` argument is the number of input clips from which
+/// frame properties may be drawn.
+///
+/// # Errors
+///
+/// Returns a [`CodegenError`] if the expression cannot be compiled.
+///
+/// # Panics
+///
+/// Panics if JIT finalization fails.
+pub fn compile_jit_select(
+  ast: &[Expr],
+  num_prop_clips: usize,
+  required_frame_props: &[(usize, String)],
+) -> Result<SelectFunction, CodegenError> {
+  let mut jit_module = create_jit_module();
+  let mut built = build_select_fn(&mut jit_module, ast, num_prop_clips, required_frame_props)?;
+
+  if let Err(err) = jit_module.define_function(built.func_id, &mut built.ctx) {
+    let err_msg = match err {
+      ModuleError::Compilation(source) => pretty_error(&built.ctx.func, source),
+      _ => err.to_string(),
+    };
+    return Err(CodegenError::CompilationError(err_msg));
+  }
+
+  jit_module.finalize_definitions().unwrap();
+
+  let finalized = jit_module.get_finalized_function(built.func_id);
+  Ok(SelectFunction::from_ptr(finalized))
 }
 
 fn build_entry_fn(
@@ -326,6 +366,115 @@ fn build_entry_fn(
     })?;
 
     fx.bcx.ins().return_(&[]);
+    fx.bcx.seal_all_blocks();
+    fx.bcx.finalize();
+    comments = fx.comments;
+  }
+
+  Ok(BuiltEntryFn {
+    func_id: main_func_id,
+    ctx,
+    comments,
+  })
+}
+
+fn build_select_fn(
+  m: &mut dyn Module,
+  ast: &[Expr],
+  num_prop_clips: usize,
+  required_frame_props: &[(usize, String)],
+) -> CodegenResult<BuiltEntryFn> {
+  let pointer_type = m.target_config().pointer_type();
+
+  let main_sig = Signature {
+    params: vec![
+      AbiParam::new(types::I64),   // Current frame number (N).
+      AbiParam::new(types::I64),   // Clip width.
+      AbiParam::new(types::I64),   // Clip height.
+      AbiParam::new(pointer_type), // Frame properties array pointer.
+    ],
+    returns: vec![AbiParam::new(types::F32)],
+    call_conv: m.target_config().default_call_conv,
+  };
+  let main_func_id = m
+    .declare_function(
+      &format!("__CRANEXPR_SELECT_{}", nanoid!()),
+      Linkage::Export,
+      &main_sig,
+    )
+    .unwrap();
+
+  let mut ctx = Context::new();
+  ctx.func.signature = main_sig;
+  let comments;
+  {
+    let mut func_ctx = FunctionBuilderContext::new();
+    let mut bcx = FunctionBuilder::new(&mut ctx.func, &mut func_ctx);
+
+    let block = bcx.create_block();
+    bcx.switch_to_block(block);
+    bcx.append_block_params_for_function_params(block);
+
+    let (n, width, height, props_ptr) = {
+      let params = bcx.block_params(block);
+      (params[0], params[1], params[2], params[3])
+    };
+
+    // The actual types are not relevant here because pixel access is not
+    // permitted anyways.
+    let src_types = vec![ComponentType::F32; num_prop_clips];
+
+    let mut fx = FunctionCx {
+      module: m,
+      bcx,
+      variables: HashMap::new(),
+      dst_type: ComponentType::F32,
+      src_types,
+      pointer_type,
+      boundary_mode: BoundaryMode::Clamp,
+      src_clips: Pointer::new(props_ptr),
+      src_strides: Pointer::new(props_ptr),
+      width,
+      height,
+      comments: CommentWriter::new(),
+    };
+
+    // Constants.
+    codegen_variable(&mut fx, "N", n);
+    codegen_variable(&mut fx, "width", width);
+    codegen_variable(&mut fx, "height", height);
+    let pi_val = fx.bcx.ins().f32const(PI);
+    codegen_variable(&mut fx, "pi", pi_val);
+
+    // Frame properties.
+    let props_ptr = Pointer::new(props_ptr);
+    for (i, (clip_idx, prop_name)) in required_frame_props.iter().enumerate() {
+      let offset = Offset32::new((i * size_of::<f32>()) as i32);
+      let val = props_ptr
+        .offset(&mut fx, offset)
+        .load(&mut fx, types::F32, FRAME_PROP_MEMFLAGS);
+
+      let var = fx.bcx.declare_var(types::F32);
+      fx.bcx.def_var(var, val);
+
+      fx.variables
+        .insert(format!("prop_{clip_idx}_{prop_name}"), var);
+    }
+
+    // Evaluate expressions.
+    let expr_val = if let Some((last_expr, preceding_exprs)) = ast.split_last() {
+      // Evaluate all preceding expressions first for any side effects.
+      for expr in preceding_exprs {
+        translate_expr(&mut fx, expr)?;
+      }
+
+      // Last expression is expected to evaluate to the final result.
+      translate_expr(&mut fx, last_expr)?
+    } else {
+      return Err(cranexpr_parser::ParseError::ExpressionEvaluatesToNothing.into());
+    };
+
+    fx.bcx.ins().return_(&[expr_val]);
     fx.bcx.seal_all_blocks();
     fx.bcx.finalize();
     comments = fx.comments;
@@ -1006,5 +1155,70 @@ mod tests {
     let actual = run_expr_ndarray(expr, &x);
 
     assert_eq!(actual, expected);
+  }
+
+  fn run_select(expr: &str, n: i32) -> f32 {
+    let ast = cranexpr_parser::parse_expr(expr).unwrap();
+    let compiled = compile_jit_select(&ast, 0, &[]).expect("should compile select");
+    unsafe { compiled.invoke(n, 1, 1, &[]) }
+  }
+
+  fn run_select_with_props(
+    expr: &str,
+    n: i32,
+    num_prop_clips: usize,
+    required_props: &[(usize, String)],
+    frame_props: &[f32],
+  ) -> f32 {
+    let ast = cranexpr_parser::parse_expr(expr).unwrap();
+    let compiled =
+      compile_jit_select(&ast, num_prop_clips, required_props).expect("should compile select");
+    unsafe { compiled.invoke(n, 1, 1, frame_props) }
+  }
+
+  #[rstest]
+  #[case("0", 0, 0.0)]
+  #[case("1", 0, 1.0)]
+  #[case("N", 0, 0.0)]
+  #[case("N", 7, 7.0)]
+  #[case("N 1 +", 5, 6.0)]
+  #[case("1 2 +", 0, 3.0)]
+  #[case("pi", 0, PI)]
+  fn test_select_basic(#[case] expr: &str, #[case] n: i32, #[case] expected: f32) {
+    assert_relative_eq!(run_select(expr, n), expected);
+  }
+
+  #[rstest]
+  fn test_select_frame_props() {
+    let required = vec![
+      (0, "PlaneStatsAverage".to_string()),
+      (1, "PlaneStatsAverage".to_string()),
+    ];
+    let expr = "x.PlaneStatsAverage y.PlaneStatsAverage >";
+    let result = run_select_with_props(expr, 0, 2, &required, &[0.7, 0.3]);
+    assert_relative_eq!(result, 1.0);
+    let result = run_select_with_props(expr, 0, 2, &required, &[0.1, 0.9]);
+    assert_relative_eq!(result, 0.0);
+  }
+
+  #[rstest]
+  fn test_select_width_height() {
+    let ast = cranexpr_parser::parse_expr("width height *").unwrap();
+    let compiled = compile_jit_select(&ast, 0, &[]).expect("should compile select");
+    let result = unsafe { compiled.invoke(0, 640, 480, &[]) };
+    assert_relative_eq!(result, 640.0 * 480.0);
+  }
+
+  #[rstest]
+  fn test_select_width_height_individually() {
+    let ast = cranexpr_parser::parse_expr("width").unwrap();
+    let compiled = compile_jit_select(&ast, 0, &[]).expect("should compile select");
+    let result = unsafe { compiled.invoke(0, 1920, 1080, &[]) };
+    assert_relative_eq!(result, 1920.0);
+
+    let ast = cranexpr_parser::parse_expr("height").unwrap();
+    let compiled = compile_jit_select(&ast, 0, &[]).expect("should compile select");
+    let result = unsafe { compiled.invoke(0, 1920, 1080, &[]) };
+    assert_relative_eq!(result, 1080.0);
   }
 }

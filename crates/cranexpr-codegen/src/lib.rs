@@ -6,10 +6,12 @@ mod compiler;
 mod pointer;
 mod translate;
 
-pub use compiler::{compile_clif, compile_jit};
+pub use compiler::{compile_clif, compile_jit, compile_jit_select};
 
 type MainFunc =
   unsafe extern "C" fn(*mut u8, i64, *const *const u8, *const i64, i64, i64, i64, *const f32);
+
+type SelectFunc = unsafe extern "C" fn(i64, i64, i64, *const f32) -> f32;
 
 #[derive(Debug)]
 pub struct MainFunction {
@@ -63,5 +65,43 @@ impl MainFunction {
         frame_props_ptr,
       );
     };
+  }
+}
+
+/// A JIT-compiled function that evaluates an expression once per frame.
+#[derive(Debug)]
+pub struct SelectFunction {
+  ptr: *const u8,
+}
+
+impl SelectFunction {
+  pub(crate) const fn from_ptr(ptr: *const u8) -> Self {
+    Self { ptr }
+  }
+
+  /// Invokes the compiled select function.
+  ///
+  /// # Safety
+  ///
+  /// The caller must ensure that `frame_props` matches what was used during
+  /// compilation.
+  #[inline]
+  #[must_use]
+  pub unsafe fn invoke(&self, n: i32, width: i32, height: i32, frame_props: &[f32]) -> f32 {
+    let frame_props_ptr = if frame_props.is_empty() {
+      std::ptr::null()
+    } else {
+      frame_props.as_ptr()
+    };
+
+    let func = unsafe { std::mem::transmute::<*const u8, SelectFunc>(self.ptr) };
+    unsafe {
+      func(
+        i64::from(n),
+        i64::from(width),
+        i64::from(height),
+        frame_props_ptr,
+      )
+    }
   }
 }

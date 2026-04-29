@@ -99,3 +99,37 @@ cranexpr.Expr(
 - `format` — By default the output format is the same as the first input clip's
   format. This can be overridden by setting this parameter.
 - `boundary` — Boundary mode. `0` for clamping, `1` for mirroring.
+
+```python
+cranexpr.Select(
+  clip_src: vs.VideoNode | Sequence[vs.VideoNode],
+  prop_src: vs.VideoNode | Sequence[vs.VideoNode],
+  expr: str | list[str],
+) -> vs.VideoNode
+```
+
+- `clip_src` — Candidate clips. All must have the same format and dimensions.
+- `prop_src` — Clips whose frame properties the expression may read.
+- `expr` — Reverse Polish Notation (RPN) expression(s) for each plane. The
+  expression given for the previous plane is used if the list contains fewer
+  expressions than the input clip has planes. This means that a single
+  expression will be applied to all planes by default.
+
+`Select` evaluates a RPN expression once per frame (per plane) and uses the
+result as an index to pick a clip from `clip_src` to satisfy the current frame
+request. It is designed to replace many uses of `std.FrameEval` where you want
+to compute a metric from frame properties and then choose one of several clips
+to use.
+
+For each output frame and each plane, the filter evaluates the plane's
+expression, rounds the result to the nearest integer, clamps it to the range
+`[0, len(clip_src) - 1]`, then takes that plane from `clip_src[index]`'s frame
+`n`.
+
+`Select` supports all operators supported by `Expr` except those that access
+pixel values (`x`/`y`/`srcN` as pixel values, relative pixel access like
+`x[-1,0]`, absolute pixel access like `x[]`, and the per-pixel coordinate
+variables `X` and `Y`).
+
+Unlike `Expr`, where a non-existent frame property evaluates to `NaN`, `Select`
+uses `0.0` instead.
