@@ -22,5 +22,6 @@
     cargo-insta
     cargo-nextest
     cargo-shear
+    vapoursynth
   ];
 }
