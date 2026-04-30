@@ -8,10 +8,10 @@ miette = "=7.6.0"
 nanoid = "=0.5.0"
 thiserror = "=2.0.18"
 
-cranelift = "=0.131.0"
-cranelift-jit = "=0.131.0"
-cranelift-module = "=0.131.0"
-cranelift-native = "=0.131.0"
+cranelift = "=0.131.1"
+cranelift-jit = "=0.131.1"
+cranelift-module = "=0.131.1"
+cranelift-native = "=0.131.1"
 
 cranexpr-ast = { workspace = true }
 cranexpr-parser = { workspace = true }
