@@ -30,6 +30,9 @@ pub(crate) struct FunctionCx<'m, 'clif> {
   pub(crate) bcx: FunctionBuilder<'clif>,
   pub(crate) variables: HashMap<String, Variable>,
 
+  /// User-defined variables created by the `var!` store expression.
+  pub(crate) user_variables: HashMap<String, Variable>,
+
   #[allow(dead_code)]
   pub(crate) dst_type: ComponentType,
   #[allow(dead_code)]
@@ -213,6 +216,7 @@ fn build_entry_fn(
       module: m,
       bcx,
       variables: HashMap::new(),
+      user_variables: HashMap::new(),
       dst_type,
       src_types: src_types.to_vec(),
       pointer_type,
