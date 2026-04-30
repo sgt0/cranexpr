@@ -43,6 +43,20 @@ wheels = [
 ]
 
 [[package]]
+name = "vapoursynth-akarin"
+version = "1.4.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "vapoursynth" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/49/b6/98a4e918177a787e176c6a526d30afa9ce631671cb444b46b859fa13c645/vapoursynth_akarin-1.4.0.tar.gz", hash = "sha256:2a459d8ce43e96f5fd1d72ed8b6dba1b84a2e4781c4de4d6b6f8140b21a80f08", size = 537980, upload-time = "2026-04-23T14:55:35.153Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/17/82/835dbb56c0cecf19b4b82845410b03b603253b72e5d1912a71deb59132b1/vapoursynth_akarin-1.4.0-py3-none-macosx_14_0_arm64.whl", hash = "sha256:dae8fecd6a54cecd5c2b4a9fb2ca2d94c89ce091b44936189250d48fe9889ab8", size = 22472256, upload-time = "2026-04-23T14:55:25.099Z" },
+    { url = "https://files.pythonhosted.org/packages/7f/01/3a8388fcfc1c3a10604373da94f49ab5310cf3c950c0c5f510e44b79f638/vapoursynth_akarin-1.4.0-py3-none-manylinux_2_39_x86_64.manylinux_2_42_x86_64.whl", hash = "sha256:a27ca3e6bdbc6d4564ce06857d283a3dd9697c5027419029f6b3153c925fcf9a", size = 30406340, upload-time = "2026-04-23T14:55:28.871Z" },
+    { url = "https://files.pythonhosted.org/packages/eb/e0/f9ca791a7f6ac4aa588d4b67ad884c2229dddb3400c3166089c9111f8efa/vapoursynth_akarin-1.4.0-py3-none-win_amd64.whl", hash = "sha256:787c199d3886ca28794006b515f176b11c708f5b478ae3b561b49004e500e204", size = 25892735, upload-time = "2026-04-23T14:55:32.538Z" },
+]
+
+[[package]]
 name = "vapoursynth-cranexpr"
 version = "0.5.0"
 source = { editable = "." }
@@ -53,10 +67,14 @@ dependencies = [
 [package.dev-dependencies]
 dev = [
     { name = "ruff" },
+    { name = "vapoursynth-akarin" },
 ]
 
 [package.metadata]
 requires-dist = [{ name = "vapoursynth", specifier = ">=74" }]
 
 [package.metadata.requires-dev]
-dev = [{ name = "ruff", specifier = "==0.15.12" }]
+dev = [
+    { name = "ruff", specifier = "==0.15.12" },
+    { name = "vapoursynth-akarin", specifier = "==1.4.0" },
+]
