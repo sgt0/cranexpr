@@ -229,7 +229,7 @@ pub(crate) fn translate_expr(
 }
 
 /// Computes the byte offset for a pixel at (x, y).
-fn codegen_pixel_offset(
+pub(crate) fn codegen_pixel_offset(
   fx: &mut FunctionCx<'_, '_>,
   clip_idx: usize,
   x: Value,
@@ -259,7 +259,10 @@ fn codegen_pixel_offset(
 }
 
 /// Resolves a clip name (e.g., "x", "y", "src0") to a clip index.
-fn resolve_clip_name(clip: &str, src_types: &[ComponentType]) -> Result<usize, CodegenError> {
+pub(crate) fn resolve_clip_name(
+  clip: &str,
+  src_types: &[ComponentType],
+) -> Result<usize, CodegenError> {
   // Check if it's a shorthand (x, y, z, a, b, ...)
   if clip.len() == 1 {
     let ch = clip.chars().next().unwrap();

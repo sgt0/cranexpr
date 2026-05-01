@@ -4,7 +4,9 @@ pub mod errors;
 
 mod compiler;
 mod pointer;
+mod simd_plan;
 mod translate;
+mod translate_simd;
 
 pub use compiler::{compile_clif, compile_jit};
 
