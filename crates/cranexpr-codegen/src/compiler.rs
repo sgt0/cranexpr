@@ -18,7 +18,9 @@ use crate::comment_writer::CommentWriter;
 use crate::component_type::ComponentType;
 use crate::errors::{CodegenError, CodegenResult};
 use crate::pointer::Pointer;
-use crate::translate::translate_expr;
+use crate::simd_plan::try_simd_plan;
+use crate::translate::{codegen_pixel_offset, translate_expr};
+use crate::translate_simd::{simd_lane_offsets_f32x4, translate_expr_simd};
 
 pub(crate) const SRC_MEMFLAGS: MemFlags = MemFlags::trusted().with_readonly().with_can_move();
 const FRAME_PROP_MEMFLAGS: MemFlags = MemFlags::trusted().with_readonly().with_can_move();
@@ -165,7 +167,6 @@ fn build_entry_fn(
   required_frame_props: &[(usize, String)],
 ) -> CodegenResult<BuiltEntryFn> {
   let pointer_type = m.target_config().pointer_type();
-  let pointer_size = pointer_type.bytes() as i32;
 
   let main_sig = Signature {
     params: vec![
@@ -251,30 +252,19 @@ fn build_entry_fn(
         .insert(format!("prop_{clip_idx}_{prop_name}"), var);
     }
 
-    codegen_for_loop(&mut fx, start_idx, height, step, |fx, y_coord| {
-      codegen_variable(fx, "Y", y_coord);
+    let simd_plan = try_simd_plan(ast, dst_type, src_types);
 
-      codegen_for_loop(fx, start_idx, width, step, |fx, x_coord| {
+    let scalar_pixel_body =
+      |fx: &mut FunctionCx<'_, '_>, y_coord: Value, x_coord: Value| -> CodegenResult<()> {
         codegen_variable(fx, "X", x_coord);
 
         for (var_idx, src_type) in src_types.iter().enumerate() {
-          // srcN pointer
-          let src_ptr_val = Pointer::new(src_ptrs)
-            .offset(fx, Offset32::new(var_idx as i32 * pointer_size))
-            .load(fx, pointer_type, SRC_MEMFLAGS);
-          let src_ptr = Pointer::new(src_ptr_val);
-
-          // srcN stride
-          let src_stride = Pointer::new(src_strides_ptr)
-            .offset(fx, Offset32::new(var_idx as i32 * 8))
-            .load(fx, types::I64, SRC_MEMFLAGS);
-
-          // pixel_offset = y * stride + x * bytes_per_sample
-          let row_offset = fx.bcx.ins().imul(y_coord, src_stride);
-          let col_offset = fx.bcx.ins().imul_imm(x_coord, src_type.bytes() as i64);
-          let pixel_offset = fx.bcx.ins().iadd(row_offset, col_offset);
-          let pixel_ptr = src_ptr.offset_value(fx, pixel_offset);
-          let val = pixel_ptr.load(fx, (*src_type).into(), SRC_MEMFLAGS);
+          let (src_ptr, pixel_offset) =
+            codegen_pixel_offset(fx, var_idx, x_coord, y_coord, *src_type);
+          let val =
+            src_ptr
+              .offset_value(fx, pixel_offset)
+              .load(fx, (*src_type).into(), SRC_MEMFLAGS);
 
           // Convert to float.
           let val = match src_type {
@@ -325,9 +315,85 @@ fn build_entry_fn(
           .offset_value(fx, dest_offset)
           .store(fx, expr_val, MemFlags::new());
 
+        // Clear per-pixel caches so the variables redeclared on the next
+        // iteration don't inherit defs from a sibling block.
+        fx.variables
+          .retain(|k, _| !k.contains('[') && !k.starts_with("src"));
+        fx.user_variables.clear();
+
         Ok(())
-      })
-    })?;
+      };
+
+    let f32_bytes = ComponentType::F32.bytes() as i64;
+    let lane_offsets_val = simd_plan.as_ref().map(|_| simd_lane_offsets_f32x4(&mut fx));
+    let simd_pixel_body =
+      |fx: &mut FunctionCx<'_, '_>, y_coord: Value, x_coord: Value| -> CodegenResult<()> {
+        codegen_variable(fx, "X", x_coord);
+
+        for var_idx in 0..src_types.len() {
+          let (src_ptr, pixel_offset) =
+            codegen_pixel_offset(fx, var_idx, x_coord, y_coord, ComponentType::F32);
+          let val = src_ptr.offset_value(fx, pixel_offset).load(
+            fx,
+            types::F32X4,
+            SRC_MEMFLAGS.with_aligned(),
+          );
+
+          let var = fx.bcx.declare_var(types::F32X4);
+          fx.bcx.def_var(var, val);
+          fx.variables.insert(format!("simd_src{var_idx}"), var);
+        }
+
+        let x_f32 = fx.bcx.ins().fcvt_from_uint(types::F32, x_coord);
+        let x_splat = fx.bcx.ins().splat(types::F32X4, x_f32);
+        let offsets = lane_offsets_val.expect("simd body entered without SIMD plan");
+        let x_vec = fx.bcx.ins().fadd(x_splat, offsets);
+        let x_var = fx.bcx.declare_var(types::F32X4);
+        fx.bcx.def_var(x_var, x_vec);
+        fx.variables.insert("simd_X".to_string(), x_var);
+
+        let expr_val = if let Some((last_expr, preceding_exprs)) = ast.split_last() {
+          for expr in preceding_exprs {
+            translate_expr_simd(fx, expr)?;
+          }
+          translate_expr_simd(fx, last_expr)?
+        } else {
+          return Err(cranexpr_parser::ParseError::ExpressionEvaluatesToNothing.into());
+        };
+
+        let dest_row_offset = fx.bcx.ins().imul(y_coord, dst_stride);
+        let dest_col_offset = fx.bcx.ins().imul_imm(x_coord, f32_bytes);
+        let dest_offset = fx.bcx.ins().iadd(dest_row_offset, dest_col_offset);
+        // VapourSynth guarantees row strides are aligned to at least 32 bytes.
+        dest_ptr.offset_value(fx, dest_offset).store(
+          fx,
+          expr_val,
+          MemFlags::trusted().with_aligned(),
+        );
+
+        fx.variables
+          .retain(|k, _| !k.starts_with("simd_") && !k.starts_with("src"));
+        fx.user_variables.clear();
+
+        Ok(())
+      };
+
+    if let Some(plan) = &simd_plan {
+      let lanes_val = fx.bcx.ins().iconst(types::I64, plan.lanes);
+      codegen_for_loop(&mut fx, start_idx, height, step, |fx, y_coord| {
+        codegen_variable(fx, "Y", y_coord);
+        codegen_for_loop(fx, start_idx, width, lanes_val, |fx, x_coord| {
+          simd_pixel_body(fx, y_coord, x_coord)
+        })
+      })?;
+    } else {
+      codegen_for_loop(&mut fx, start_idx, height, step, |fx, y_coord| {
+        codegen_variable(fx, "Y", y_coord);
+        codegen_for_loop(fx, start_idx, width, step, |fx, x_coord| {
+          scalar_pixel_body(fx, y_coord, x_coord)
+        })
+      })?;
+    }
 
     fx.bcx.ins().return_(&[]);
     fx.bcx.seal_all_blocks();
@@ -448,7 +514,7 @@ mod tests {
   }
 
   fn run_expr(expr: &str) -> f32 {
-    let src = array![[0.0f32]];
+    let src = array![[0.0_f32; 4]];
     let dst = run_expr_ndarray(expr, &src);
     dst[[0, 0]]
   }
@@ -518,19 +584,52 @@ mod tests {
   }
 
   #[rstest]
-  #[case(0.0, 0.0f32.sin())]
-  #[case(0.5, 0.5f32.sin())]
-  #[case(1.0, 1.0f32.sin())]
-  fn test_sin(#[case] input: f32, #[case] expected: f32) {
-    assert_relative_eq!(run_expr(&format!("{input} sin")), expected);
+  #[case(0.0)]
+  #[case(0.5)]
+  #[case(1.0)]
+  #[case(-1.5)]
+  #[case(-0.25)]
+  #[case(0.25)]
+  #[case(1.5)]
+  #[case(PI / 2.0)]
+  #[case(PI)]
+  #[case(3.0 * PI / 2.0)]
+  #[case(2.0 * PI)]
+  #[case(-PI)]
+  #[case(10.0)]
+  fn test_sin(#[case] input: f32) {
+    let expected = input.sin();
+    assert_relative_eq!(run_expr(&format!("{input} sin")), expected, epsilon = 5e-6);
   }
 
   #[rstest]
-  #[case(0.0, 0.0f32.cos())]
-  #[case(0.5, 0.5f32.cos())]
-  #[case(1.0, 1.0f32.cos())]
-  fn test_cos(#[case] input: f32, #[case] expected: f32) {
-    assert_relative_eq!(run_expr(&format!("{input} cos")), expected);
+  #[case(0.0)]
+  #[case(0.5)]
+  #[case(1.0)]
+  #[case(-1.5)]
+  #[case(-0.25)]
+  #[case(0.25)]
+  #[case(1.5)]
+  #[case(PI / 2.0)]
+  #[case(PI)]
+  #[case(3.0 * PI / 2.0)]
+  #[case(2.0 * PI)]
+  #[case(-PI)]
+  #[case(10.0)]
+  fn test_cos(#[case] input: f32) {
+    let expected = input.cos();
+    assert_relative_eq!(run_expr(&format!("{input} cos")), expected, epsilon = 5e-6);
+  }
+
+  #[rstest]
+  fn test_sin_cos_per_lane() {
+    let src: &[&[f32]] = &[&[0.0, 0.5, 1.0, 2.0]];
+    let sin_out = run_expr_padded("x sin", src, None);
+    let cos_out = run_expr_padded("x cos", src, None);
+    for (i, &v) in src[0].iter().enumerate() {
+      assert_relative_eq!(sin_out[0][i], v.sin(), epsilon = 5e-6);
+      assert_relative_eq!(cos_out[0][i], v.cos(), epsilon = 5e-6);
+    }
   }
 
   #[rstest]
@@ -673,6 +772,50 @@ mod tests {
   #[case("3 2 pow", 9.0)]
   fn test_pow(#[case] expr: &str, #[case] expected: f32) {
     assert_relative_eq!(run_expr(expr), expected);
+  }
+
+  #[rstest]
+  fn test_pow_simd_literal_exponents() {
+    let src: &[&[f32]] = &[&[0.5, 1.5, 2.5, 3.5]];
+    for (expr, exponent) in [
+      ("x 0 pow", 0.0_f32),
+      ("x 1 pow", 1.0),
+      ("x 2 pow", 2.0),
+      ("x 0.5 pow", 0.5),
+      ("x 3 pow", 3.0),
+      ("x 4 pow", 4.0),
+      ("x 5 pow", 5.0),
+      ("x 6 pow", 6.0),
+      ("x 7 pow", 7.0),
+      ("x 8 pow", 8.0),
+    ] {
+      let out = run_expr_padded(expr, src, None);
+      for (i, &v) in src[0].iter().enumerate() {
+        let expected = v.powf(exponent);
+        assert_relative_eq!(out[0][i], expected, epsilon = 5e-5);
+      }
+    }
+  }
+
+  #[rstest]
+  fn test_pow_simd_general() {
+    let src: &[&[f32]] = &[&[0.25, 0.75, 1.5, 4.0]];
+    let out = run_expr_padded("x 0.86 pow", src, None);
+    for (i, &v) in src[0].iter().enumerate() {
+      let expected = v.powf(0.86);
+      assert_relative_eq!(out[0][i], expected, epsilon = 5e-5);
+    }
+  }
+
+  #[rstest]
+  fn test_pow_simd_dynamic_exponent() {
+    let src: &[&[f32]] = &[&[2.0, 3.0, 4.0, 5.0]];
+    let out = run_expr_padded("x Y 1 + pow", src, None);
+    let expected_exp = 1.0_f32;
+    for (i, &v) in src[0].iter().enumerate() {
+      let expected = v.powf(expected_exp);
+      assert_relative_eq!(out[0][i], expected, epsilon = 5e-5);
+    }
   }
 
   #[rstest]
@@ -1010,5 +1153,165 @@ mod tests {
     let actual = run_expr_ndarray(expr, &x);
 
     assert_eq!(actual, expected);
+  }
+
+  fn run_expr_padded(
+    expr: &str,
+    src_rows: &[&[f32]],
+    boundary_mode: Option<BoundaryMode>,
+  ) -> Vec<Vec<f32>> {
+    let height = src_rows.len();
+    let width = src_rows[0].len();
+    assert!(src_rows.iter().all(|r| r.len() == width));
+
+    let row_padded: usize = width.div_ceil(8) * 8;
+
+    let mut src_flat: Vec<f32> = vec![0.0; row_padded * height];
+    for (y, row) in src_rows.iter().enumerate() {
+      src_flat[y * row_padded..y * row_padded + width].copy_from_slice(row);
+    }
+    let mut dst_flat: Vec<f32> = vec![0.0; row_padded * height];
+
+    let ast = cranexpr_parser::parse_expr(expr).unwrap();
+    let compiled = compile_jit(
+      &ast,
+      ComponentType::F32,
+      &[ComponentType::F32],
+      boundary_mode,
+      &[],
+    )
+    .expect("should compile expr");
+
+    let stride = (row_padded * std::mem::size_of::<f32>()) as i64;
+    let src_ptrs = [src_flat.as_ptr().cast::<u8>()];
+    let src_strides = [stride];
+
+    unsafe {
+      compiled.invoke(
+        &mut dst_flat[..],
+        stride,
+        &src_ptrs,
+        &src_strides,
+        width as i32,
+        height as i32,
+        0,
+        &[],
+      );
+    }
+
+    (0..height)
+      .map(|y| dst_flat[y * row_padded..y * row_padded + width].to_vec())
+      .collect()
+  }
+
+  #[rstest]
+  fn test_simd_rel_access_left_shift_clamp() {
+    let src: &[&[f32]] = &[&[10.0, 20.0, 30.0, 40.0]];
+    let out = run_expr_padded("x[-1,0]", src, None);
+    assert_eq!(out, vec![vec![10.0, 10.0, 20.0, 30.0]]);
+  }
+
+  #[rstest]
+  fn test_simd_rel_access_right_shift_clamp() {
+    let src: &[&[f32]] = &[&[10.0, 20.0, 30.0, 40.0]];
+    let out = run_expr_padded("x[1,0]", src, None);
+    assert_eq!(out, vec![vec![20.0, 30.0, 40.0, 40.0]]);
+  }
+
+  #[rstest]
+  fn test_simd_rel_access_left_shift_two_clamp() {
+    let src: &[&[f32]] = &[&[10.0, 20.0, 30.0, 40.0]];
+    let out = run_expr_padded("x[-2,0]", src, None);
+    assert_eq!(out, vec![vec![10.0, 10.0, 10.0, 20.0]]);
+  }
+
+  #[rstest]
+  fn test_simd_rel_access_non_multiple_width_past_tail() {
+    let src: &[&[f32]] = &[&[1.0, 2.0, 3.0]];
+    let out = run_expr_padded("x 10 *", src, None);
+    assert_eq!(out, vec![vec![10.0, 20.0, 30.0]]);
+  }
+
+  #[rstest]
+  fn test_simd_rel_access_vertical_clamp() {
+    let src: &[&[f32]] = &[&[1.0, 2.0, 3.0, 4.0], &[5.0, 6.0, 7.0, 8.0]];
+    let out = run_expr_padded("x[0,-1]", src, None);
+    assert_eq!(
+      out,
+      vec![vec![1.0, 2.0, 3.0, 4.0], vec![1.0, 2.0, 3.0, 4.0]]
+    );
+  }
+
+  #[rstest]
+  fn test_simd_rel_access_mirror_horizontal() {
+    let src: &[&[f32]] = &[&[10.0, 20.0, 30.0, 40.0]];
+    let out = run_expr_padded("x[-1,0]", src, Some(BoundaryMode::Mirror));
+    assert_eq!(out, vec![vec![10.0, 10.0, 20.0, 30.0]]);
+  }
+
+  #[rstest]
+  fn test_simd_rel_access_right_shift_non_multiple_width() {
+    let src: &[&[f32]] = &[&[10.0, 20.0, 30.0, 40.0, 50.0, 60.0]];
+    let out = run_expr_padded("x[1,0]", src, None);
+    assert_eq!(out, vec![vec![20.0, 30.0, 40.0, 50.0, 60.0, 60.0]]);
+  }
+
+  #[rstest]
+  fn test_simd_if_else_per_lane_blend() {
+    let src: &[&[f32]] = &[&[10.0, 20.0, 30.0, 40.0]];
+    let out = run_expr_padded("x 25 > 100 200 ?", src, None);
+    assert_eq!(out, vec![vec![200.0, 200.0, 100.0, 100.0]]);
+  }
+
+  #[rstest]
+  fn test_simd_if_else_truthy_threshold() {
+    let src: &[&[f32]] = &[&[-1.0, 0.0, 0.5, 1.0]];
+    let out = run_expr_padded("x 7 8 ?", src, None);
+    assert_eq!(out, vec![vec![8.0, 8.0, 7.0, 7.0]]);
+  }
+
+  #[rstest]
+  fn test_simd_if_else_nested() {
+    let src: &[&[f32]] = &[&[-1.0, 0.0, 0.5, 1.0]];
+    let out = run_expr_padded("x 1 x -1 0 ? ?", src, None);
+    assert_eq!(out, vec![vec![0.0, 0.0, 1.0, 1.0]]);
+  }
+
+  #[rstest]
+  fn test_simd_if_else_with_arith_arms() {
+    let src: &[&[f32]] = &[&[1.0, 2.0, 3.0, 4.0]];
+    let out = run_expr_padded("x 2 > x 10 * x 100 + ?", src, None);
+    assert_eq!(out, vec![vec![101.0, 102.0, 30.0, 40.0]]);
+  }
+
+  #[rstest]
+  fn test_simd_abs_access_constant_coords() {
+    let src: &[&[f32]] = &[&[10.0, 20.0, 30.0, 40.0]];
+    let out = run_expr_padded("1 0 x[]", src, None);
+    assert_eq!(out, vec![vec![20.0, 20.0, 20.0, 20.0]]);
+  }
+
+  #[rstest]
+  fn test_simd_abs_access_horizontal_flip() {
+    let src: &[&[f32]] = &[&[1.0, 2.0, 3.0, 4.0], &[5.0, 6.0, 7.0, 8.0]];
+    let out = run_expr_padded("width X - 1 - Y x[]", src, None);
+    assert_eq!(
+      out,
+      vec![vec![4.0, 3.0, 2.0, 1.0], vec![8.0, 7.0, 6.0, 5.0]]
+    );
+  }
+
+  #[rstest]
+  fn test_simd_abs_access_clamp_boundary() {
+    let src: &[&[f32]] = &[&[10.0, 20.0, 30.0, 40.0]];
+    let out = run_expr_padded("X 2 - 0 x[]", src, None);
+    assert_eq!(out, vec![vec![10.0, 10.0, 10.0, 20.0]]);
+  }
+
+  #[rstest]
+  fn test_simd_abs_access_mirror_boundary() {
+    let src: &[&[f32]] = &[&[10.0, 20.0, 30.0, 40.0]];
+    let out = run_expr_padded("-1 0 x[]", src, Some(BoundaryMode::Mirror));
+    assert_eq!(out, vec![vec![10.0, 10.0, 10.0, 10.0]]);
   }
 }
