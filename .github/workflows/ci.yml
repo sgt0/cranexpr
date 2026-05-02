@@ -87,7 +87,7 @@ jobs:
           toolchain: nightly
 
       - name: Install cargo-nextest
-        uses: taiki-e/install-action@7769b73c2ec98c38dfcf2e18c83cfd4880c038c1 # v2.75.27
+        uses: taiki-e/install-action@b5fddbb5361bce8a06fb168c9d403a6cc552b084 # v2.75.29
         with:
           tool: cargo-nextest
 
@@ -131,7 +131,7 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
       - name: Install cargo-shear
-        uses: taiki-e/install-action@7769b73c2ec98c38dfcf2e18c83cfd4880c038c1 # v2.75.27
+        uses: taiki-e/install-action@b5fddbb5361bce8a06fb168c9d403a6cc552b084 # v2.75.29
         with:
           tool: cargo-shear
 
