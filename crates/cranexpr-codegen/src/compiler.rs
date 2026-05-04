@@ -653,6 +653,15 @@ mod tests {
   }
 
   #[rstest]
+  fn test_exp_per_lane() {
+    let src: &[&[f32]] = &[&[-2.0, -0.5, 0.5, 2.0]];
+    let out = run_expr_padded("x exp", src, None);
+    for (i, &v) in src[0].iter().enumerate() {
+      assert_relative_eq!(out[0][i], v.exp(), epsilon = 5e-6);
+    }
+  }
+
+  #[rstest]
   fn test_variables() {
     let ast = cranexpr_parser::parse_expr("x y +").unwrap();
     let compiled = compile_jit(
