@@ -746,6 +746,15 @@ mod tests {
   }
 
   #[rstest]
+  fn test_log_per_lane() {
+    let src: &[&[f32]] = &[&[0.5, 1.0, 2.718_281_8, 10.0]];
+    let out = run_expr_padded("x log", src, None);
+    for (i, &v) in src[0].iter().enumerate() {
+      assert_relative_eq!(out[0][i], v.ln(), epsilon = 5e-6);
+    }
+  }
+
+  #[rstest]
   #[case("1.2 floor", 1.0)]
   #[case("1.8 floor", 1.0)]
   #[case("-1.2 floor", -2.0)]

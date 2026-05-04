@@ -92,5 +92,6 @@ const fn is_unop_simd_eligible(op: UnOp) -> bool {
       | UnOp::Sine
       | UnOp::Cosine
       | UnOp::Exp
+      | UnOp::Log
   )
 }
