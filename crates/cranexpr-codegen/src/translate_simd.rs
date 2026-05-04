@@ -82,7 +82,8 @@ pub(crate) fn translate_expr_simd(
         UnOp::Sine => sin_cos_simd(fx, x, SinCos::Sin),
         UnOp::Cosine => sin_cos_simd(fx, x, SinCos::Cos),
         UnOp::Exp => exp_simd(fx, x),
-        UnOp::Log | UnOp::Round | UnOp::Tangent => {
+        UnOp::Log => log_simd(fx, x),
+        UnOp::Round | UnOp::Tangent => {
           unreachable!("op {op:?} should have been rejected by SIMD eligibility check")
         }
       })
