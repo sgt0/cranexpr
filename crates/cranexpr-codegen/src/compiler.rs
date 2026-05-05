@@ -633,11 +633,29 @@ mod tests {
   }
 
   #[rstest]
-  #[case(0.0, 0.0f32.tan())]
-  #[case(0.5, 0.5f32.tan())]
-  #[case(1.0, 1.0f32.tan())]
-  fn test_tan(#[case] input: f32, #[case] expected: f32) {
-    assert_relative_eq!(run_expr(&format!("{input} tan")), expected);
+  #[case(0.0)]
+  #[case(0.5)]
+  #[case(1.0)]
+  #[case(-1.0)]
+  #[case(-0.25)]
+  #[case(0.25)]
+  #[case(PI / 4.0)]
+  #[case(-PI / 4.0)]
+  #[case(PI)]
+  #[case(-PI)]
+  #[case(2.0 * PI)]
+  fn test_tan(#[case] input: f32) {
+    let expected = input.tan();
+    assert_relative_eq!(run_expr(&format!("{input} tan")), expected, epsilon = 5e-6);
+  }
+
+  #[rstest]
+  fn test_tan_per_lane() {
+    let src: &[&[f32]] = &[&[0.0, PI / 4.0, 1.0, -0.5]];
+    let out = run_expr_padded("x tan", src, None);
+    for (i, &v) in src[0].iter().enumerate() {
+      assert_relative_eq!(out[0][i], v.tan(), epsilon = 5e-6);
+    }
   }
 
   #[rstest]
