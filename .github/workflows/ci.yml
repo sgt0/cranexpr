@@ -107,7 +107,7 @@ jobs:
           toolchain: nightly
 
       - name: Run Clippy
-        run: cargo clippy
+        run: cargo clippy --all-targets --workspace
 
   rustfmt:
     runs-on: ubuntu-24.04
