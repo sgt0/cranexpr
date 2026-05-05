@@ -84,11 +84,9 @@ pub(crate) fn translate_expr_simd(
         }
         UnOp::Sine => sin_cos_simd(fx, x, SinCos::Sin),
         UnOp::Cosine => sin_cos_simd(fx, x, SinCos::Cos),
+        UnOp::Tangent => sin_cos_simd(fx, x, SinCos::Tan),
         UnOp::Exp => exp_simd(fx, x),
         UnOp::Log => log_simd(fx, x),
-        UnOp::Tangent => {
-          unreachable!("op {op:?} should have been rejected by SIMD eligibility check")
-        }
       })
     }
 
@@ -250,10 +248,11 @@ fn vselect_f32x4(
 enum SinCos {
   Sin,
   Cos,
+  Tan,
 }
 
-/// Vectorized minimax polynomial approximation of `sin(x)` or `cos(x)` over
-/// F32X4.
+/// Vectorized minimax polynomial approximation of `sin(x)`, `cos(x)`, or
+/// `tan(x)` over F32X4.
 ///
 /// Refer:
 ///   Software Manual for the Elementary Functions
@@ -294,6 +293,11 @@ fn sin_cos_simd(fx: &mut FunctionCx<'_, '_>, x: Value, mode: SinCos) -> Value {
       fx.bcx.ins().bxor(input_sign, odd_n_sign)
     }
     SinCos::Cos => odd_n_sign,
+    SinCos::Tan => {
+      let x_bits = fx.bcx.ins().bitcast(types::I32X4, MemFlags::new(), x);
+      let not_absmask = fx.bcx.ins().bnot(absmask);
+      fx.bcx.ins().band(x_bits, not_absmask)
+    }
   };
   let n_float = fx.bcx.ins().fcvt_from_sint(VEC_TYPE, n_int);
 
@@ -307,35 +311,43 @@ fn sin_cos_simd(fx: &mut FunctionCx<'_, '_>, x: Value, mode: SinCos) -> Value {
   let reduced = fx.bcx.ins().fma(n_float, neg_pi3, reduced);
   let reduced = fx.bcx.ins().fma(n_float, neg_pi4, reduced);
 
+  let sin_poly = |fx: &mut FunctionCx<'_, '_>, reduced: Value| -> Value {
+    // Minimax polynomial for sin(x) in [-pi/2, pi/2]:
+    //   x + x * x^2 * (C3 + x^2 * (C5 + x^2 * (C7 + x^2 * C9)))
+    let float_sinc3 = vf32_from_bits(fx, 0xbe2a_aaa6);
+    let float_sinc5 = vf32_from_bits(fx, 0x3c08_876a);
+    let float_sinc7 = vf32_from_bits(fx, 0xb94f_b7ff);
+    let float_sinc9 = vf32_from_bits(fx, 0x362e_def8);
+    let xsq = fx.bcx.ins().fmul(reduced, reduced);
+    let poly = fx.bcx.ins().fma(xsq, float_sinc9, float_sinc7);
+    let poly = fx.bcx.ins().fma(poly, xsq, float_sinc5);
+    let poly = fx.bcx.ins().fma(poly, xsq, float_sinc3);
+    let poly = fx.bcx.ins().fmul(poly, xsq);
+    let poly = fx.bcx.ins().fmul(poly, reduced);
+    fx.bcx.ins().fadd(reduced, poly)
+  };
+  let cos_poly = |fx: &mut FunctionCx<'_, '_>, reduced: Value| -> Value {
+    // Minimax polynomial for cos(x) in [-pi/2, pi/2]:
+    //   1 + x^2 * (C2 + x^2 * (C4 + x^2 * (C6 + x^2 * C8)))
+    let float_cosc2 = vf32_from_bits(fx, 0xbeff_ffe2);
+    let float_cosc4 = vf32_from_bits(fx, 0x3d2a_a73c);
+    let float_cosc6 = vf32_from_bits(fx, 0xbab5_8d50);
+    let float_cosc8 = vf32_from_bits(fx, 0x37c1_ad76);
+    let xsq = fx.bcx.ins().fmul(reduced, reduced);
+    let one = splat_f32(fx, 1.0);
+    let poly = fx.bcx.ins().fma(xsq, float_cosc8, float_cosc6);
+    let poly = fx.bcx.ins().fma(poly, xsq, float_cosc4);
+    let poly = fx.bcx.ins().fma(poly, xsq, float_cosc2);
+    fx.bcx.ins().fma(poly, xsq, one)
+  };
+
   let result = match mode {
-    SinCos::Sin => {
-      // Minimax polynomial for sin(x) in [-pi/2, pi/2]:
-      //   x + x * x^2 * (C3 + x^2 * (C5 + x^2 * (C7 + x^2 * C9)))
-      let float_sinc3 = vf32_from_bits(fx, 0xbe2a_aaa6);
-      let float_sinc5 = vf32_from_bits(fx, 0x3c08_876a);
-      let float_sinc7 = vf32_from_bits(fx, 0xb94f_b7ff);
-      let float_sinc9 = vf32_from_bits(fx, 0x362e_def8);
-      let xsq = fx.bcx.ins().fmul(reduced, reduced);
-      let poly = fx.bcx.ins().fma(xsq, float_sinc9, float_sinc7);
-      let poly = fx.bcx.ins().fma(poly, xsq, float_sinc5);
-      let poly = fx.bcx.ins().fma(poly, xsq, float_sinc3);
-      let poly = fx.bcx.ins().fmul(poly, xsq);
-      let poly = fx.bcx.ins().fmul(poly, reduced);
-      fx.bcx.ins().fadd(reduced, poly)
-    }
-    SinCos::Cos => {
-      // Minimax polynomial for cos(x) in [-pi/2, pi/2]:
-      //   1 + x^2 * (C2 + x^2 * (C4 + x^2 * (C6 + x^2 * C8)))
-      let float_cosc2 = vf32_from_bits(fx, 0xbeff_ffe2);
-      let float_cosc4 = vf32_from_bits(fx, 0x3d2a_a73c);
-      let float_cosc6 = vf32_from_bits(fx, 0xbab5_8d50);
-      let float_cosc8 = vf32_from_bits(fx, 0x37c1_ad76);
-      let xsq = fx.bcx.ins().fmul(reduced, reduced);
-      let one = splat_f32(fx, 1.0);
-      let poly = fx.bcx.ins().fma(xsq, float_cosc8, float_cosc6);
-      let poly = fx.bcx.ins().fma(poly, xsq, float_cosc4);
-      let poly = fx.bcx.ins().fma(poly, xsq, float_cosc2);
-      fx.bcx.ins().fma(poly, xsq, one)
+    SinCos::Sin => sin_poly(fx, reduced),
+    SinCos::Cos => cos_poly(fx, reduced),
+    SinCos::Tan => {
+      let s = sin_poly(fx, reduced);
+      let c = cos_poly(fx, reduced);
+      fx.bcx.ins().fdiv(s, c)
     }
   };
 
