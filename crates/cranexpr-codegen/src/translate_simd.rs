@@ -8,10 +8,12 @@ use crate::compiler::{FunctionCx, SRC_MEMFLAGS};
 use crate::component_type::ComponentType;
 use crate::errors::CodegenError;
 use crate::pointer::Pointer;
-use crate::simd_plan::SIMD_LANES;
 use crate::translate::{codegen_boundary_mode, codegen_pixel_offset, resolve_clip_name};
 
 const VEC_TYPE: types::Type = types::F32X4;
+
+/// Number of pixels processed per SIMD iteration.
+pub(crate) const SIMD_LANES: i64 = 4;
 
 /// Loads 4 adjacent pixels of arbitrary component type at `src_ptr + offset`,
 /// promoting them to an `F32X4` vector.

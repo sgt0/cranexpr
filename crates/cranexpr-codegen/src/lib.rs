@@ -4,7 +4,7 @@ pub mod errors;
 
 mod compiler;
 mod pointer;
-mod simd_plan;
+#[allow(dead_code)]
 mod translate;
 mod translate_simd;
 
