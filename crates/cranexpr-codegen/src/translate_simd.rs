@@ -76,9 +76,11 @@ pub(crate) fn translate_expr_simd(
         UnOp::Sign => {
           let zero = splat_f32(fx, 0.0);
           let one = splat_f32(fx, 1.0);
-          let is_zero = fx.bcx.ins().fcmp(FloatCC::Equal, x, zero);
-          let sign = fx.bcx.ins().fcopysign(one, x);
-          vselect_f32x4(fx, is_zero, zero, sign)
+          let neg_one = splat_f32(fx, -1.0);
+          let is_neg = fx.bcx.ins().fcmp(FloatCC::LessThan, x, zero);
+          let is_pos = fx.bcx.ins().fcmp(FloatCC::GreaterThan, x, zero);
+          let pos_or_zero = vselect_f32x4(fx, is_pos, one, zero);
+          vselect_f32x4(fx, is_neg, neg_one, pos_or_zero)
         }
         UnOp::Sine => sin_cos_simd(fx, x, SinCos::Sin),
         UnOp::Cosine => sin_cos_simd(fx, x, SinCos::Cos),

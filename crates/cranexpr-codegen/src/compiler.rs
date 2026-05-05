@@ -887,6 +887,16 @@ mod tests {
   }
 
   #[rstest]
+  fn test_sign_per_lane() {
+    let src: &[&[f32]] = &[&[-2.0, -0.5, -0.0, 0.0, 0.5, 2.0, -100.0, 100.0]];
+    let out = run_expr_padded("x sgn", src, None);
+    let expected = [-1.0, -1.0, 0.0, 0.0, 1.0, 1.0, -1.0, 1.0];
+    for (i, &e) in expected.iter().enumerate() {
+      assert_relative_eq!(out[0][i], e);
+    }
+  }
+
+  #[rstest]
   #[case("3 1 2 sort3 + +", 6.0)]
   #[case("3 1 2 sort3 drop drop", 3.0)]
   #[case("3 1 2 sort3 drop2", 3.0)]
