@@ -7,10 +7,90 @@ use cranexpr_ast::{BinOp, BoundaryMode, Expr, TernaryOp, UnOp};
 use crate::compiler::{FunctionCx, SRC_MEMFLAGS};
 use crate::component_type::ComponentType;
 use crate::errors::CodegenError;
+use crate::pointer::Pointer;
 use crate::simd_plan::SIMD_LANES;
 use crate::translate::{codegen_boundary_mode, codegen_pixel_offset, resolve_clip_name};
 
 const VEC_TYPE: types::Type = types::F32X4;
+
+/// Loads 4 adjacent pixels of arbitrary component type at `src_ptr + offset`,
+/// promoting them to an `F32X4` vector.
+pub(crate) fn load_pixel_vec_f32x4(
+  fx: &mut FunctionCx<'_, '_>,
+  src_ptr: Pointer,
+  offset: Value,
+  src_type: ComponentType,
+  aligned: bool,
+) -> Value {
+  let ptr = src_ptr.offset_value(fx, offset);
+  match src_type {
+    ComponentType::F32 => {
+      let flags = if aligned {
+        SRC_MEMFLAGS.with_aligned()
+      } else {
+        SRC_MEMFLAGS
+      };
+      ptr.load(fx, VEC_TYPE, flags)
+    }
+    ComponentType::U16 => {
+      let addr = ptr.get_addr(fx);
+      let i32x4 = fx.bcx.ins().uload16x4(SRC_MEMFLAGS, addr, 0);
+      fx.bcx.ins().fcvt_from_uint(VEC_TYPE, i32x4)
+    }
+    ComponentType::U8 => {
+      let addr = ptr.get_addr(fx);
+      let i16x8 = fx.bcx.ins().uload8x8(SRC_MEMFLAGS, addr, 0);
+      let i32x4 = fx.bcx.ins().uwiden_low(i16x8);
+      fx.bcx.ins().fcvt_from_uint(VEC_TYPE, i32x4)
+    }
+  }
+}
+
+/// Clamps, rounds, converts, and narrows an `F32X4` output vector to the
+/// destination pixel format, then stores 4 pixels at `dest + offset`.
+pub(crate) fn store_pixel_vec_f32x4(
+  fx: &mut FunctionCx<'_, '_>,
+  dest_ptr: Pointer,
+  offset: Value,
+  value: Value,
+  dst_type: ComponentType,
+) {
+  let ptr = dest_ptr.offset_value(fx, offset);
+  match dst_type {
+    ComponentType::F32 => {
+      // VapourSynth guarantees row strides are aligned to at least 32 bytes.
+      ptr.store(fx, value, MemFlags::trusted().with_aligned());
+    }
+    ComponentType::U8 | ComponentType::U16 => {
+      let zero = splat_f32(fx, 0.0);
+      let peak = splat_f32(fx, dst_type.peak_value());
+      let clamped = fx.bcx.ins().fmin(value, peak);
+      let clamped = fx.bcx.ins().fmax(clamped, zero);
+      let rounded = fx.bcx.ins().nearest(clamped);
+      let i32x4 = fx.bcx.ins().fcvt_to_uint_sat(types::I32X4, rounded);
+      let byte_flags = MemFlags::new().with_endianness(Endianness::Little);
+      match dst_type {
+        ComponentType::U16 => {
+          // Narrow I32X4 -> I16X8 with unsigned saturation.
+          let narrowed = fx.bcx.ins().unarrow(i32x4, i32x4);
+          let as_i64x2 = fx.bcx.ins().bitcast(types::I64X2, byte_flags, narrowed);
+          let low = fx.bcx.ins().extractlane(as_i64x2, 0);
+          ptr.store(fx, low, MemFlags::trusted());
+        }
+        ComponentType::U8 => {
+          // Narrow I32X4 -> I16X8 (unsigned saturating),
+          // then narrow I16X8 -> I8X16 (unsigned saturating).
+          let n16 = fx.bcx.ins().unarrow(i32x4, i32x4);
+          let n8 = fx.bcx.ins().unarrow(n16, n16);
+          let as_i32x4 = fx.bcx.ins().bitcast(types::I32X4, byte_flags, n8);
+          let low = fx.bcx.ins().extractlane(as_i32x4, 0);
+          ptr.store(fx, low, MemFlags::trusted());
+        }
+        ComponentType::F32 => unreachable!(),
+      }
+    }
+  }
+}
 
 pub(crate) fn translate_expr_simd(
   fx: &mut FunctionCx<'_, '_>,
@@ -729,6 +809,8 @@ fn translate_rel_access_simd(
   let x_base = fx.bcx.use_var(*x_var);
   let y_base = fx.bcx.use_var(*y_var);
 
+  let src_type = fx.src_types[clip_idx];
+
   let target_y = if rel_y == 0 {
     y_base
   } else {
@@ -738,12 +820,13 @@ fn translate_rel_access_simd(
   };
 
   if rel_x == 0 {
-    let (src_ptr, pixel_offset) =
-      codegen_pixel_offset(fx, clip_idx, x_base, target_y, ComponentType::F32);
-    return Ok(src_ptr.offset_value(fx, pixel_offset).load(
+    let (src_ptr, pixel_offset) = codegen_pixel_offset(fx, clip_idx, x_base, target_y, src_type);
+    return Ok(load_pixel_vec_f32x4(
       fx,
-      VEC_TYPE,
-      SRC_MEMFLAGS.with_aligned(),
+      src_ptr,
+      pixel_offset,
+      src_type,
+      true,
     ));
   }
 
@@ -764,6 +847,7 @@ fn translate_rel_access_clamp_x(
   target_y: Value,
   x_base: Value,
 ) -> Value {
+  let src_type = fx.src_types[clip_idx];
   let width = fx.width;
   let one = fx.bcx.ins().iconst(types::I64, 1);
   let zero = fx.bcx.ins().iconst(types::I64, 0);
@@ -780,11 +864,8 @@ fn translate_rel_access_clamp_x(
   let too_small = fx.bcx.ins().icmp(IntCC::SignedLessThan, clamped_hi, zero);
   let clamped_x = fx.bcx.ins().select(too_small, zero, clamped_hi);
 
-  let (src_ptr, pixel_offset) =
-    codegen_pixel_offset(fx, clip_idx, clamped_x, target_y, ComponentType::F32);
-  let raw = src_ptr
-    .offset_value(fx, pixel_offset)
-    .load(fx, VEC_TYPE, SRC_MEMFLAGS);
+  let (src_ptr, pixel_offset) = codegen_pixel_offset(fx, clip_idx, clamped_x, target_y, src_type);
+  let raw = load_pixel_vec_f32x4(fx, src_ptr, pixel_offset, src_type, false);
 
   if rel_x < 0 {
     apply_left_swizzle_fixup(fx, raw, x_base, rel_x)
@@ -939,6 +1020,7 @@ fn translate_rel_access_mirror_x(
   target_y: Value,
   x_base: Value,
 ) -> Value {
+  let src_type = fx.src_types[clip_idx];
   let lanes = SIMD_LANES;
   let rel_x_val = fx.bcx.ins().iconst(types::I64, i64::from(rel_x));
 
@@ -950,10 +1032,8 @@ fn translate_rel_access_mirror_x(
     let x_shifted = fx.bcx.ins().iadd(x_unshifted, rel_x_val);
     let x_mirrored = codegen_boundary_mode(fx, x_shifted, fx.width, BoundaryMode::Mirror);
     let (src_ptr, pixel_offset) =
-      codegen_pixel_offset(fx, clip_idx, x_mirrored, target_y, ComponentType::F32);
-    let scalar = src_ptr
-      .offset_value(fx, pixel_offset)
-      .load(fx, types::F32, SRC_MEMFLAGS);
+      codegen_pixel_offset(fx, clip_idx, x_mirrored, target_y, src_type);
+    let scalar = load_scalar_as_f32(fx, src_ptr, pixel_offset, src_type);
     vec = fx.bcx.ins().insertlane(vec, scalar, lane as u8);
   }
   vec
@@ -966,6 +1046,7 @@ fn translate_abs_access_simd(
   y_vec: Value,
   boundary_mode: BoundaryMode,
 ) -> Value {
+  let src_type = fx.src_types[clip_idx];
   let x_rounded = fx.bcx.ins().nearest(x_vec);
   let y_rounded = fx.bcx.ins().nearest(y_vec);
   let x_i32x4 = fx.bcx.ins().fcvt_to_sint_sat(types::I32X4, x_rounded);
@@ -981,11 +1062,26 @@ fn translate_abs_access_simd(
     let clamped_x = codegen_boundary_mode(fx, x_lane, fx.width, boundary_mode);
     let clamped_y = codegen_boundary_mode(fx, y_lane, fx.height, boundary_mode);
     let (src_ptr, pixel_offset) =
-      codegen_pixel_offset(fx, clip_idx, clamped_x, clamped_y, ComponentType::F32);
-    let scalar = src_ptr
-      .offset_value(fx, pixel_offset)
-      .load(fx, types::F32, SRC_MEMFLAGS);
+      codegen_pixel_offset(fx, clip_idx, clamped_x, clamped_y, src_type);
+    let scalar = load_scalar_as_f32(fx, src_ptr, pixel_offset, src_type);
     vec = fx.bcx.ins().insertlane(vec, scalar, lane as u8);
   }
   vec
+}
+
+/// Loads a single pixel of arbitrary component type at `src_ptr + offset` and
+/// promotes it to an `F32` scalar.
+fn load_scalar_as_f32(
+  fx: &mut FunctionCx<'_, '_>,
+  src_ptr: Pointer,
+  offset: Value,
+  src_type: ComponentType,
+) -> Value {
+  let val = src_ptr
+    .offset_value(fx, offset)
+    .load(fx, src_type.into(), SRC_MEMFLAGS);
+  match src_type {
+    ComponentType::U8 | ComponentType::U16 => fx.bcx.ins().fcvt_from_uint(types::F32, val),
+    ComponentType::F32 => val,
+  }
 }
