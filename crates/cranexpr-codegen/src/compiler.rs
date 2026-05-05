@@ -18,10 +18,10 @@ use crate::comment_writer::CommentWriter;
 use crate::component_type::ComponentType;
 use crate::errors::{CodegenError, CodegenResult};
 use crate::pointer::Pointer;
-use crate::simd_plan::try_simd_plan;
-use crate::translate::{codegen_pixel_offset, translate_expr};
+use crate::translate::codegen_pixel_offset;
 use crate::translate_simd::{
-  load_pixel_vec_f32x4, simd_lane_offsets_f32x4, store_pixel_vec_f32x4, translate_expr_simd,
+  SIMD_LANES, load_pixel_vec_f32x4, simd_lane_offsets_f32x4, store_pixel_vec_f32x4,
+  translate_expr_simd,
 };
 
 pub(crate) const SRC_MEMFLAGS: MemFlags = MemFlags::trusted().with_readonly().with_can_move();
@@ -254,79 +254,11 @@ fn build_entry_fn(
         .insert(format!("prop_{clip_idx}_{prop_name}"), var);
     }
 
-    let simd_plan = try_simd_plan(ast, dst_type, src_types);
+    let (last_expr, preceding_exprs) = ast
+      .split_last()
+      .ok_or(cranexpr_parser::ParseError::ExpressionEvaluatesToNothing)?;
 
-    let scalar_pixel_body =
-      |fx: &mut FunctionCx<'_, '_>, y_coord: Value, x_coord: Value| -> CodegenResult<()> {
-        codegen_variable(fx, "X", x_coord);
-
-        for (var_idx, src_type) in src_types.iter().enumerate() {
-          let (src_ptr, pixel_offset) =
-            codegen_pixel_offset(fx, var_idx, x_coord, y_coord, *src_type);
-          let val =
-            src_ptr
-              .offset_value(fx, pixel_offset)
-              .load(fx, (*src_type).into(), SRC_MEMFLAGS);
-
-          // Convert to float.
-          let val = match src_type {
-            ComponentType::U8 | ComponentType::U16 => fx.bcx.ins().fcvt_from_uint(types::F32, val),
-            ComponentType::F32 => val,
-          };
-
-          // Store it in a variable.
-          let var = fx.bcx.declare_var(types::F32);
-          fx.bcx.def_var(var, val);
-          fx.variables.insert(format!("src{var_idx}"), var);
-        }
-
-        // Evaluate expressions.
-
-        let expr_val = if let Some((last_expr, preceding_exprs)) = ast.split_last() {
-          // Evaluate all preceding expressions first for any side effects.
-          for expr in preceding_exprs {
-            translate_expr(fx, expr)?;
-          }
-
-          // Last expression is expected to evaluate to the final result.
-          translate_expr(fx, last_expr)?
-        } else {
-          return Err(cranexpr_parser::ParseError::ExpressionEvaluatesToNothing.into());
-        };
-
-        // Convert output floats to integers if necessary.
-        let expr_val = match dst_type {
-          ComponentType::U8 | ComponentType::U16 => {
-            let zero = fx.bcx.ins().f32const(0.0);
-            let peak_value = fx.bcx.ins().f32const(dst_type.peak_value());
-
-            let mut clamped = fx.bcx.ins().fmin(expr_val, peak_value);
-            clamped = fx.bcx.ins().fmax(clamped, zero);
-            clamped = fx.bcx.ins().nearest(clamped);
-
-            fx.bcx.ins().fcvt_to_uint_sat(types::I32, clamped)
-          }
-          ComponentType::F32 => expr_val,
-        };
-
-        // dest_offset = y * dst_stride + x * bytes_per_sample
-        let dest_row_offset = fx.bcx.ins().imul(y_coord, dst_stride);
-        let dest_col_offset = fx.bcx.ins().imul_imm(x_coord, dst_type.bytes() as i64);
-        let dest_offset = fx.bcx.ins().iadd(dest_row_offset, dest_col_offset);
-        dest_ptr
-          .offset_value(fx, dest_offset)
-          .store(fx, expr_val, MemFlags::new());
-
-        // Clear per-pixel caches so the variables redeclared on the next
-        // iteration don't inherit defs from a sibling block.
-        fx.variables
-          .retain(|k, _| !k.contains('[') && !k.starts_with("src"));
-        fx.user_variables.clear();
-
-        Ok(())
-      };
-
-    let lane_offsets_val = simd_plan.as_ref().map(|_| simd_lane_offsets_f32x4(&mut fx));
+    let lane_offsets_val = simd_lane_offsets_f32x4(&mut fx);
     let src_types_owned = src_types.to_vec();
     let simd_pixel_body =
       |fx: &mut FunctionCx<'_, '_>, y_coord: Value, x_coord: Value| -> CodegenResult<()> {
@@ -344,20 +276,15 @@ fn build_entry_fn(
 
         let x_f32 = fx.bcx.ins().fcvt_from_uint(types::F32, x_coord);
         let x_splat = fx.bcx.ins().splat(types::F32X4, x_f32);
-        let offsets = lane_offsets_val.expect("simd body entered without SIMD plan");
-        let x_vec = fx.bcx.ins().fadd(x_splat, offsets);
+        let x_vec = fx.bcx.ins().fadd(x_splat, lane_offsets_val);
         let x_var = fx.bcx.declare_var(types::F32X4);
         fx.bcx.def_var(x_var, x_vec);
         fx.variables.insert("simd_X".to_string(), x_var);
 
-        let expr_val = if let Some((last_expr, preceding_exprs)) = ast.split_last() {
-          for expr in preceding_exprs {
-            translate_expr_simd(fx, expr)?;
-          }
-          translate_expr_simd(fx, last_expr)?
-        } else {
-          return Err(cranexpr_parser::ParseError::ExpressionEvaluatesToNothing.into());
-        };
+        for expr in preceding_exprs {
+          translate_expr_simd(fx, expr)?;
+        }
+        let expr_val = translate_expr_simd(fx, last_expr)?;
 
         let dest_row_offset = fx.bcx.ins().imul(y_coord, dst_stride);
         let dest_col_offset = fx.bcx.ins().imul_imm(x_coord, dst_type.bytes() as i64);
@@ -371,22 +298,13 @@ fn build_entry_fn(
         Ok(())
       };
 
-    if let Some(plan) = &simd_plan {
-      let lanes_val = fx.bcx.ins().iconst(types::I64, plan.lanes);
-      codegen_for_loop(&mut fx, start_idx, height, step, |fx, y_coord| {
-        codegen_variable(fx, "Y", y_coord);
-        codegen_for_loop(fx, start_idx, width, lanes_val, |fx, x_coord| {
-          simd_pixel_body(fx, y_coord, x_coord)
-        })
-      })?;
-    } else {
-      codegen_for_loop(&mut fx, start_idx, height, step, |fx, y_coord| {
-        codegen_variable(fx, "Y", y_coord);
-        codegen_for_loop(fx, start_idx, width, step, |fx, x_coord| {
-          scalar_pixel_body(fx, y_coord, x_coord)
-        })
-      })?;
-    }
+    let lanes_val = fx.bcx.ins().iconst(types::I64, SIMD_LANES);
+    codegen_for_loop(&mut fx, start_idx, height, step, |fx, y_coord| {
+      codegen_variable(fx, "Y", y_coord);
+      codegen_for_loop(fx, start_idx, width, lanes_val, |fx, x_coord| {
+        simd_pixel_body(fx, y_coord, x_coord)
+      })
+    })?;
 
     fx.bcx.ins().return_(&[]);
     fx.bcx.seal_all_blocks();
