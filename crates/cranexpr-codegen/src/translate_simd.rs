@@ -560,6 +560,13 @@ fn codegen_float_binop_simd(
     BinOp::Sub => fx.bcx.ins().fsub(lhs, rhs),
     BinOp::Mul => fx.bcx.ins().fmul(lhs, rhs),
     BinOp::Div => fx.bcx.ins().fdiv(lhs, rhs),
+    BinOp::Rem => {
+      // x - trunc(x / y) * y
+      let quot = fx.bcx.ins().fdiv(lhs, rhs);
+      let trunc_quot = fx.bcx.ins().trunc(quot);
+      let prod = fx.bcx.ins().fmul(trunc_quot, rhs);
+      fx.bcx.ins().fsub(lhs, prod)
+    }
     BinOp::Gt | BinOp::Gte | BinOp::Lt | BinOp::Lte | BinOp::Eq => {
       let float_cc = match op {
         BinOp::Gt => FloatCC::GreaterThan,
@@ -600,7 +607,7 @@ fn codegen_float_binop_simd(
       fx.bcx.ins().fcvt_from_sint(VEC_TYPE, res_i)
     }
     BinOp::Pow => unreachable!("pow is handled by pow_simd"),
-    BinOp::Rem | BinOp::Atan2 => {
+    BinOp::Atan2 => {
       unreachable!("op {op:?} should have been rejected by SIMD eligibility check")
     }
   }

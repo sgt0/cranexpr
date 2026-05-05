@@ -804,6 +804,28 @@ mod tests {
   }
 
   #[rstest]
+  fn test_modulo_per_lane() {
+    let src: &[&[f32]] = &[&[5.0, -5.0, 1.2, 7.5]];
+    let out = run_expr_padded("x 2.0 %", src, None);
+    for (i, &v) in src[0].iter().enumerate() {
+      assert_relative_eq!(out[0][i], v % 2.0, epsilon = 1e-6);
+    }
+
+    let src2: &[&[f32]] = &[&[10.0, -10.0, 13.5, -13.5]];
+    let out2 = run_expr_padded("x -3.0 %", src2, None);
+    for (i, &v) in src2[0].iter().enumerate() {
+      assert_relative_eq!(out2[0][i], v % -3.0, epsilon = 1e-6);
+    }
+
+    let src3: &[&[f32]] = &[&[10.0, 11.0, 12.5, -7.25]];
+    let out3 = run_expr_padded("x X 1 + %", src3, None);
+    for (i, &v) in src3[0].iter().enumerate() {
+      let d = (i as f32) + 1.0;
+      assert_relative_eq!(out3[0][i], v % d, epsilon = 1e-6);
+    }
+  }
+
+  #[rstest]
   #[case("2 3 pow", 8.0)]
   #[case("3 2 pow", 9.0)]
   fn test_pow(#[case] expr: &str, #[case] expected: f32) {

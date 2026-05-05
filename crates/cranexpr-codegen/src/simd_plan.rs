@@ -62,6 +62,7 @@ const fn is_binop_simd_eligible(op: BinOp) -> bool {
       | BinOp::Sub
       | BinOp::Mul
       | BinOp::Div
+      | BinOp::Rem
       | BinOp::Gt
       | BinOp::Lt
       | BinOp::Eq
