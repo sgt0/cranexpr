@@ -858,8 +858,24 @@ mod tests {
   #[case("-1.2 round", -1.0)]
   #[case("-1.8 round", -2.0)]
   #[case("3.0 round", 3.0)]
+  #[case("0.5 round", 0.0)]
+  #[case("1.5 round", 2.0)]
+  #[case("2.5 round", 2.0)]
+  #[case("-0.5 round", 0.0)]
+  #[case("-1.5 round", -2.0)]
+  #[case("-2.5 round", -2.0)]
   fn test_round(#[case] expr: &str, #[case] expected: f32) {
     assert_relative_eq!(run_expr(expr), expected);
+  }
+
+  #[rstest]
+  fn test_round_per_lane() {
+    let src: &[&[f32]] = &[&[0.5, 1.5, -0.5, -1.5, 1.2, 1.8, -1.2, -1.8]];
+    let out = run_expr_padded("x round", src, None);
+    let expected = [0.0, 2.0, 0.0, -2.0, 1.0, 2.0, -1.0, -2.0];
+    for (i, &e) in expected.iter().enumerate() {
+      assert_relative_eq!(out[0][i], e);
+    }
   }
 
   #[rstest]
