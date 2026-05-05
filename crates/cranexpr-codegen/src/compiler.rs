@@ -468,7 +468,7 @@ fn codegen_variable<K: Into<String>>(fx: &mut FunctionCx<'_, '_>, name: K, data:
 
 #[cfg(test)]
 mod tests {
-  use std::f32::consts::PI;
+  use std::f32::consts::{E, PI};
 
   use approx::assert_relative_eq;
   use ndarray::{Array2, array};
@@ -765,7 +765,7 @@ mod tests {
 
   #[rstest]
   fn test_log_per_lane() {
-    let src: &[&[f32]] = &[&[0.5, 1.0, 2.718_281_8, 10.0]];
+    let src: &[&[f32]] = &[&[0.5, 1.0, E, 10.0]];
     let out = run_expr_padded("x log", src, None);
     for (i, &v) in src[0].iter().enumerate() {
       assert_relative_eq!(out[0][i], v.ln(), epsilon = 5e-6);
@@ -804,6 +804,7 @@ mod tests {
   }
 
   #[rstest]
+  #[allow(clippy::cast_precision_loss)]
   fn test_modulo_per_lane() {
     let src: &[&[f32]] = &[&[5.0, -5.0, 1.2, 7.5]];
     let out = run_expr_padded("x 2.0 %", src, None);
@@ -1110,6 +1111,23 @@ mod tests {
   #[case("-1 1 atan2", -PI / 4.0)]
   fn test_atan2(#[case] expr: &str, #[case] expected: f32) {
     assert_relative_eq!(run_expr(expr), expected);
+  }
+
+  #[rstest]
+  fn test_atan2_per_lane() {
+    let src: &[&[f32]] = &[&[0.0, 1.0, -1.0, 0.5]];
+    let out = run_expr_padded("x 1 x - atan2", src, None);
+    for (i, &v) in src[0].iter().enumerate() {
+      let expected = v.atan2(1.0 - v);
+      assert_relative_eq!(out[0][i], expected, epsilon = 5e-6);
+    }
+
+    let src: &[&[f32]] = &[&[0.0, 1.0, -1.0, 2.0]];
+    let out = run_expr_padded("x x -1 * atan2", src, None);
+    for (i, &v) in src[0].iter().enumerate() {
+      let expected = if v == 0.0 { 0.0 } else { v.atan2(-v) };
+      assert_relative_eq!(out[0][i], expected, epsilon = 5e-6);
+    }
   }
 
   #[rstest]

@@ -1,4 +1,4 @@
-use std::f32::consts::{LN_2, LOG2_E};
+use std::f32::consts::{FRAC_PI_2, LN_2, LOG2_E, PI};
 
 use cranelift::codegen::ir::{ConstantData, Endianness};
 use cranelift::prelude::*;
@@ -33,6 +33,11 @@ pub(crate) fn translate_expr_simd(
     }
 
     Expr::Binary(BinOp::Pow, base, exponent) => pow_simd(fx, base, exponent),
+    Expr::Binary(BinOp::Atan2, y, x) => {
+      let y = translate_expr_simd(fx, y)?;
+      let x = translate_expr_simd(fx, x)?;
+      Ok(atan2_simd(fx, y, x))
+    }
     Expr::Binary(op, lhs, rhs) => {
       let lhs = translate_expr_simd(fx, lhs)?;
       let rhs = translate_expr_simd(fx, rhs)?;
@@ -242,6 +247,22 @@ fn vselect_f32x4(
     .bitcast(types::I32X4, MemFlags::new(), false_val);
   let selected = fx.bcx.ins().bitselect(mask, t_bits, f_bits);
   fx.bcx.ins().bitcast(VEC_TYPE, MemFlags::new(), selected)
+}
+
+/// Returns a value with the magnitude of `mag` and the sign of `sig`.
+fn copysign_simd(fx: &mut FunctionCx<'_, '_>, mag: Value, sig: Value) -> Value {
+  let sign_mask = fx
+    .bcx
+    .ins()
+    .iconst(types::I32, i64::from(0x8000_0000_u32 as i32));
+  let sign_mask = fx.bcx.ins().splat(types::I32X4, sign_mask);
+  let mag_bits = fx.bcx.ins().bitcast(types::I32X4, MemFlags::new(), mag);
+  let sig_bits = fx.bcx.ins().bitcast(types::I32X4, MemFlags::new(), sig);
+  let not_sign_mask = fx.bcx.ins().bnot(sign_mask);
+  let mag_abs = fx.bcx.ins().band(mag_bits, not_sign_mask);
+  let sig_sign = fx.bcx.ins().band(sig_bits, sign_mask);
+  let combined = fx.bcx.ins().bor(mag_abs, sig_sign);
+  fx.bcx.ins().bitcast(VEC_TYPE, MemFlags::new(), combined)
 }
 
 #[derive(Clone, Copy)]
@@ -549,6 +570,85 @@ fn pow_simd(
   Ok(exp_simd(fx, prod))
 }
 
+/// Vectorized minimax-polynomial approximation of `atan(x)` over F32X4.
+#[allow(clippy::excessive_precision)]
+fn atan_simd(fx: &mut FunctionCx<'_, '_>, x: Value) -> Value {
+  // Coefficients for a minimax polynomial of atan on [-1, 1], evaluated as
+  // `atan(z) ~= z + z * z^2 * poly(z^2)`.
+  // <https://github.com/shibatch/sleef/blob/3.9.0/src/libm/sleefsp.c#L942-L949>
+  let c0 = splat_f32(fx, 0.002_823_638_962_581_753_730_77);
+  let c1 = splat_f32(fx, -0.015_956_902_876_496_315_002_4);
+  let c2 = splat_f32(fx, 0.042_504_988_610_744_476_318_4);
+  let c3 = splat_f32(fx, -0.074_890_092_015_266_418_457_0);
+  let c4 = splat_f32(fx, 0.106_347_933_411_598_205_566);
+  let c5 = splat_f32(fx, -0.142_027_363_181_114_196_777);
+  let c6 = splat_f32(fx, 0.199_926_957_488_059_997_558);
+  let c7 = splat_f32(fx, -0.333_331_018_686_294_555_664);
+
+  let one = splat_f32(fx, 1.0);
+  let half_pi = splat_f32(fx, FRAC_PI_2);
+
+  // z = min(|x|, 1/|x|)
+  let abs_x = fx.bcx.ins().fabs(x);
+  let flip = fx.bcx.ins().fcmp(FloatCC::GreaterThan, abs_x, one);
+  let recip = fx.bcx.ins().fdiv(one, abs_x);
+  let z = vselect_f32x4(fx, flip, recip, abs_x);
+
+  // Horner evaluation of poly(z^2), then reconstruct z + z * z^2 * poly.
+  let z2 = fx.bcx.ins().fmul(z, z);
+  let p = fx.bcx.ins().fma(c0, z2, c1);
+  let p = fx.bcx.ins().fma(p, z2, c2);
+  let p = fx.bcx.ins().fma(p, z2, c3);
+  let p = fx.bcx.ins().fma(p, z2, c4);
+  let p = fx.bcx.ins().fma(p, z2, c5);
+  let p = fx.bcx.ins().fma(p, z2, c6);
+  let p = fx.bcx.ins().fma(p, z2, c7);
+  let p = fx.bcx.ins().fmul(p, z2);
+  let p = fx.bcx.ins().fma(p, z, z);
+
+  // If we flipped, recover atan(|x|) as pi/2 - atan(1/|x|).
+  let flipped = fx.bcx.ins().fsub(half_pi, p);
+  let mag = vselect_f32x4(fx, flip, flipped, p);
+
+  // Re-apply the sign of the original input.
+  copysign_simd(fx, mag, x)
+}
+
+/// Vectorized `atan2(y, x)` over F32X4.
+fn atan2_simd(fx: &mut FunctionCx<'_, '_>, y: Value, x: Value) -> Value {
+  // Constants.
+  let zero = splat_f32(fx, 0.0);
+  let pi = splat_f32(fx, PI);
+  let half_pi = splat_f32(fx, FRAC_PI_2);
+
+  // atan(y/x)
+  let y_div_x = fx.bcx.ins().fdiv(y, x);
+  let atan_y_div_x = atan_simd(fx, y_div_x);
+
+  // If x is negative, the result will be atan(y/x), then:
+  //   If y is positive, add pi.
+  //   If y is negative, subtract pi.
+  let signed_pi = copysign_simd(fx, pi, y);
+  let negative_x_result = fx.bcx.ins().fadd(atan_y_div_x, signed_pi);
+
+  // If x is zero, the result will be pi/2 with the sign of y.
+  let zero_x_result = copysign_simd(fx, half_pi, y);
+
+  // If x > 0: atan(y/x)
+  // Else if x < 0: negative_x_result
+  // Else (x = 0): zero_x_result
+  let x_gt_0 = fx.bcx.ins().fcmp(FloatCC::GreaterThan, x, zero);
+  let x_lt_0 = fx.bcx.ins().fcmp(FloatCC::LessThan, x, zero);
+  let inner = vselect_f32x4(fx, x_gt_0, atan_y_div_x, zero_x_result);
+  let result = vselect_f32x4(fx, x_lt_0, negative_x_result, inner);
+
+  // atan2(0, 0) is undefined.
+  let x_is_zero = fx.bcx.ins().fcmp(FloatCC::Equal, x, zero);
+  let y_is_zero = fx.bcx.ins().fcmp(FloatCC::Equal, y, zero);
+  let both_zero = fx.bcx.ins().band(x_is_zero, y_is_zero);
+  vselect_f32x4(fx, both_zero, zero, result)
+}
+
 fn codegen_float_binop_simd(
   fx: &mut FunctionCx<'_, '_>,
   op: BinOp,
@@ -607,9 +707,7 @@ fn codegen_float_binop_simd(
       fx.bcx.ins().fcvt_from_sint(VEC_TYPE, res_i)
     }
     BinOp::Pow => unreachable!("pow is handled by pow_simd"),
-    BinOp::Atan2 => {
-      unreachable!("op {op:?} should have been rejected by SIMD eligibility check")
-    }
+    BinOp::Atan2 => unreachable!("atan2 is handled by atan2_simd"),
   }
 }
 

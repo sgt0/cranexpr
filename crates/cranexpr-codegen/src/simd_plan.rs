@@ -77,6 +77,7 @@ const fn is_binop_simd_eligible(op: BinOp) -> bool {
       | BinOp::BitOr
       | BinOp::BitXor
       | BinOp::Pow
+      | BinOp::Atan2
   )
 }
 
