@@ -17,6 +17,7 @@ cranexpr-ast = { workspace = true }
 cranexpr-parser = { workspace = true }
 
 [dev-dependencies]
+aligned-vec = "=0.6.4"
 approx = "=0.5.1"
 ndarray = "=0.17.2"
 rstest = "=0.26.1"

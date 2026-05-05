@@ -380,16 +380,71 @@ fn codegen_variable<K: Into<String>>(fx: &mut FunctionCx<'_, '_>, name: K, data:
 #[cfg(test)]
 mod tests {
   use std::f32::consts::{E, PI};
+  use std::slice;
 
+  use aligned_vec::{AVec, ConstAlign};
   use approx::assert_relative_eq;
   use ndarray::{Array2, array};
   use rstest::rstest;
 
   use super::*;
 
+  /// Row alignment that VapourSynth guarantees for every plane.
+  const ROW_ALIGNMENT: usize = 32;
+
+  type AlignedBytes = AVec<u8, ConstAlign<ROW_ALIGNMENT>>;
+
+  /// Allocates a zero-filled, 32-byte-aligned plane buffer with row stride
+  /// padded up to `ROW_ALIGNMENT` bytes. Returns the buffer and its byte
+  /// stride.
+  fn alloc_aligned_plane(row_bytes: usize, rows: usize) -> (AlignedBytes, usize) {
+    let stride = row_bytes.next_multiple_of(ROW_ALIGNMENT).max(ROW_ALIGNMENT);
+    let size = stride
+      .checked_mul(rows)
+      .expect("plane size overflow")
+      .max(1);
+    let mut buf = AVec::<u8, ConstAlign<ROW_ALIGNMENT>>::new(ROW_ALIGNMENT);
+    buf.resize(size, 0);
+    (buf, stride)
+  }
+
+  /// Copies `rows` rows of `width` elements of type `T` from packed, row-major
+  /// `src` into `dst` at the given byte `stride`.
+  fn fill_plane<T: Copy>(dst: &mut [u8], stride: usize, src: &[T], width: usize, rows: usize) {
+    assert_eq!(src.len(), rows * width);
+    let row_bytes = width * std::mem::size_of::<T>();
+    for y in 0..rows {
+      let src_row = &src[y * width..y * width + width];
+      // SAFETY: `T: Copy` and the source slice covers exactly `row_bytes` bytes.
+      let src_bytes = unsafe { slice::from_raw_parts(src_row.as_ptr().cast::<u8>(), row_bytes) };
+      dst[y * stride..y * stride + row_bytes].copy_from_slice(src_bytes);
+    }
+  }
+
+  /// Copies `rows` rows of `width` elements of type `T` out of a strided plane
+  /// buffer into a packed `Vec<T>`.
+  fn unpack_plane<T: Copy + Default>(
+    src: &[u8],
+    stride: usize,
+    width: usize,
+    rows: usize,
+  ) -> Vec<T> {
+    let mut out = vec![T::default(); rows * width];
+    let row_bytes = width * std::mem::size_of::<T>();
+    for y in 0..rows {
+      let dst_row = &mut out[y * width..y * width + width];
+      let src_bytes = &src[y * stride..y * stride + row_bytes];
+      // SAFETY: `T: Copy` and the destination row holds exactly `row_bytes` bytes.
+      let dst_bytes =
+        unsafe { slice::from_raw_parts_mut(dst_row.as_mut_ptr().cast::<u8>(), row_bytes) };
+      dst_bytes.copy_from_slice(src_bytes);
+    }
+    out
+  }
+
   fn run_expr_ndarray<T>(expr: &str, src: &Array2<T>) -> Array2<T>
   where
-    T: Into<ComponentType> + Default,
+    T: Into<ComponentType> + Default + Copy,
   {
     let ast = cranexpr_parser::parse_expr(expr).unwrap();
     let (height, width) = src.dim();
@@ -397,21 +452,24 @@ mod tests {
 
     let compiled = compile_jit(&ast, pixel, &[pixel], None, &[]).expect("should compile expr");
 
-    let mut dst = Array2::<T>::default((height, width));
+    let row_bytes = width * std::mem::size_of::<T>();
+    let (mut src_buf, src_stride) = alloc_aligned_plane(row_bytes, height);
+    fill_plane(
+      src_buf.as_mut_slice(),
+      src_stride,
+      src.as_slice_memory_order().expect("src not contiguous"),
+      width,
+      height,
+    );
+    let (mut dst_buf, dst_stride) = alloc_aligned_plane(row_bytes, height);
 
-    let src_slice = src.as_slice_memory_order().expect("src not contiguous");
-    let dst_slice = dst.as_slice_memory_order_mut().expect("dst not contiguous");
-
-    let bytes_per_sample = std::mem::size_of::<T>() as i64;
-    let stride = width as i64 * bytes_per_sample;
-    let src_ptr = src_slice.as_ptr().cast::<u8>();
-    let src_ptrs = [src_ptr];
-    let src_strides = [stride];
+    let src_ptrs = [src_buf.as_ptr()];
+    let src_strides = [src_stride as i64];
 
     unsafe {
       compiled.invoke(
-        dst_slice,
-        stride,
+        dst_buf.as_mut_slice(),
+        dst_stride as i64,
         &src_ptrs,
         &src_strides,
         width as i32,
@@ -421,7 +479,8 @@ mod tests {
       );
     }
 
-    dst
+    let packed = unpack_plane::<T>(dst_buf.as_slice(), dst_stride, width, height);
+    Array2::from_shape_vec((height, width), packed).expect("shape matches")
   }
 
   fn run_expr(expr: &str) -> f32 {
@@ -602,22 +661,28 @@ mod tests {
     )
     .expect("should compile expr");
 
-    let mut actual = [0.0f32];
-    let x = [3.0f32];
-    let y = [17.0f32];
-    let bytes_per_sample = std::mem::size_of::<f32>() as i64;
+    let (mut x_buf, x_stride) = alloc_aligned_plane(std::mem::size_of::<f32>(), 1);
+    fill_plane(x_buf.as_mut_slice(), x_stride, &[3.0f32], 1, 1);
+    let (mut y_buf, y_stride) = alloc_aligned_plane(std::mem::size_of::<f32>(), 1);
+    fill_plane(y_buf.as_mut_slice(), y_stride, &[17.0f32], 1, 1);
+    let (mut dst_buf, dst_stride) = alloc_aligned_plane(std::mem::size_of::<f32>(), 1);
+
+    let src_ptrs = [x_buf.as_ptr(), y_buf.as_ptr()];
+    let src_strides = [x_stride as i64, y_stride as i64];
+
     unsafe {
       compiled.invoke(
-        &mut actual,
-        bytes_per_sample,
-        &[x.as_ptr().cast::<u8>(), y.as_ptr().cast::<u8>()],
-        &[bytes_per_sample, bytes_per_sample],
+        dst_buf.as_mut_slice(),
+        dst_stride as i64,
+        &src_ptrs,
+        &src_strides,
         1,
         1,
         0,
         &[],
       );
     };
+    let actual = unpack_plane::<f32>(dst_buf.as_slice(), dst_stride, 1, 1);
     assert_relative_eq!(actual[0], 20.0);
   }
 
@@ -637,24 +702,29 @@ mod tests {
     )
     .expect("should compile expr");
 
-    let mut actual = [0.0f32];
-    let x = [3.0f32];
-    let y = [17.0f32];
+    let (mut x_buf, x_stride) = alloc_aligned_plane(std::mem::size_of::<f32>(), 1);
+    fill_plane(x_buf.as_mut_slice(), x_stride, &[3.0f32], 1, 1);
+    let (mut y_buf, y_stride) = alloc_aligned_plane(std::mem::size_of::<f32>(), 1);
+    fill_plane(y_buf.as_mut_slice(), y_stride, &[17.0f32], 1, 1);
+    let (mut dst_buf, dst_stride) = alloc_aligned_plane(std::mem::size_of::<f32>(), 1);
     let frame_props = [0.5f32, 1.5f32];
-    let bytes_per_sample = std::mem::size_of::<f32>() as i64;
+
+    let src_ptrs = [x_buf.as_ptr(), y_buf.as_ptr()];
+    let src_strides = [x_stride as i64, y_stride as i64];
 
     unsafe {
       compiled.invoke(
-        &mut actual,
-        bytes_per_sample,
-        &[x.as_ptr().cast::<u8>(), y.as_ptr().cast::<u8>()],
-        &[bytes_per_sample, bytes_per_sample],
+        dst_buf.as_mut_slice(),
+        dst_stride as i64,
+        &src_ptrs,
+        &src_strides,
         1,
         1,
         0,
         &frame_props,
       );
     };
+    let actual = unpack_plane::<f32>(dst_buf.as_slice(), dst_stride, 1, 1);
     assert_relative_eq!(actual[0], 6.0);
   }
 
@@ -1043,53 +1113,61 @@ mod tests {
 
   #[rstest]
   fn test_integer_format_clamp() {
-    let x = [33839u16];
     let ast = cranexpr_parser::parse_expr("x 32768 / 0.86 pow 65535 *").unwrap();
 
     let compiled = compile_jit(&ast, ComponentType::U16, &[ComponentType::U16], None, &[])
       .expect("should compile expr");
 
-    let mut actual = [0u16];
-    let bytes_per_sample = std::mem::size_of::<u16>() as i64;
+    let (mut x_buf, x_stride) = alloc_aligned_plane(std::mem::size_of::<u16>(), 1);
+    fill_plane(x_buf.as_mut_slice(), x_stride, &[33839u16], 1, 1);
+    let (mut dst_buf, dst_stride) = alloc_aligned_plane(std::mem::size_of::<u16>(), 1);
+
+    let src_ptrs = [x_buf.as_ptr()];
+    let src_strides = [x_stride as i64];
 
     unsafe {
       compiled.invoke(
-        &mut actual,
-        bytes_per_sample,
-        &[x.as_ptr().cast::<u8>()],
-        &[bytes_per_sample],
+        dst_buf.as_mut_slice(),
+        dst_stride as i64,
+        &src_ptrs,
+        &src_strides,
         1,
         1,
         0,
         &[],
       );
     };
+    let actual = unpack_plane::<u16>(dst_buf.as_slice(), dst_stride, 1, 1);
     assert_eq!(actual[0], 65535);
   }
 
   #[rstest]
   fn test_integer_format_round() {
-    let x = [0u8];
     let ast = cranexpr_parser::parse_expr("1.65").unwrap();
 
     let compiled = compile_jit(&ast, ComponentType::U8, &[ComponentType::U8], None, &[])
       .expect("should compile expr");
 
-    let mut actual = [0u8];
-    let bytes_per_sample = std::mem::size_of::<u8>() as i64;
+    let (mut x_buf, x_stride) = alloc_aligned_plane(std::mem::size_of::<u8>(), 1);
+    fill_plane(x_buf.as_mut_slice(), x_stride, &[0u8], 1, 1);
+    let (mut dst_buf, dst_stride) = alloc_aligned_plane(std::mem::size_of::<u8>(), 1);
+
+    let src_ptrs = [x_buf.as_ptr()];
+    let src_strides = [x_stride as i64];
 
     unsafe {
       compiled.invoke(
-        &mut actual,
-        bytes_per_sample,
-        &[x.as_ptr().cast::<u8>()],
-        &[bytes_per_sample],
+        dst_buf.as_mut_slice(),
+        dst_stride as i64,
+        &src_ptrs,
+        &src_strides,
         1,
         1,
         0,
         &[],
       );
     };
+    let actual = unpack_plane::<u8>(dst_buf.as_slice(), dst_stride, 1, 1);
     assert_eq!(actual[0], 2);
   }
 
@@ -1177,13 +1255,11 @@ mod tests {
     let width = src_rows[0].len();
     assert!(src_rows.iter().all(|r| r.len() == width));
 
-    let row_padded: usize = width.div_ceil(8) * 8;
-
-    let mut src_flat: Vec<f32> = vec![0.0; row_padded * height];
-    for (y, row) in src_rows.iter().enumerate() {
-      src_flat[y * row_padded..y * row_padded + width].copy_from_slice(row);
-    }
-    let mut dst_flat: Vec<f32> = vec![0.0; row_padded * height];
+    let row_bytes = std::mem::size_of_val(src_rows[0]);
+    let src_flat: Vec<f32> = src_rows.iter().flat_map(|r| r.iter().copied()).collect();
+    let (mut src_buf, src_stride) = alloc_aligned_plane(row_bytes, height);
+    fill_plane(src_buf.as_mut_slice(), src_stride, &src_flat, width, height);
+    let (mut dst_buf, dst_stride) = alloc_aligned_plane(row_bytes, height);
 
     let ast = cranexpr_parser::parse_expr(expr).unwrap();
     let compiled = compile_jit(
@@ -1195,14 +1271,13 @@ mod tests {
     )
     .expect("should compile expr");
 
-    let stride = (row_padded * std::mem::size_of::<f32>()) as i64;
-    let src_ptrs = [src_flat.as_ptr().cast::<u8>()];
-    let src_strides = [stride];
+    let src_ptrs = [src_buf.as_ptr()];
+    let src_strides = [src_stride as i64];
 
     unsafe {
       compiled.invoke(
-        &mut dst_flat[..],
-        stride,
+        dst_buf.as_mut_slice(),
+        dst_stride as i64,
         &src_ptrs,
         &src_strides,
         width as i32,
@@ -1212,8 +1287,9 @@ mod tests {
       );
     }
 
+    let packed = unpack_plane::<f32>(dst_buf.as_slice(), dst_stride, width, height);
     (0..height)
-      .map(|y| dst_flat[y * row_padded..y * row_padded + width].to_vec())
+      .map(|y| packed[y * width..y * width + width].to_vec())
       .collect()
   }
 
@@ -1333,26 +1409,22 @@ mod tests {
     let width = src_rows[0].len();
     assert!(src_rows.iter().all(|r| r.len() == width));
 
-    let row_padded: usize = std::cmp::max(32, width.next_multiple_of(32));
-
-    let mut src_flat: Vec<u8> = vec![0; row_padded * height];
-    for (y, row) in src_rows.iter().enumerate() {
-      src_flat[y * row_padded..y * row_padded + width].copy_from_slice(row);
-    }
-    let mut dst_flat: Vec<u8> = vec![0; row_padded * height];
+    let src_flat: Vec<u8> = src_rows.iter().flat_map(|r| r.iter().copied()).collect();
+    let (mut src_buf, src_stride) = alloc_aligned_plane(width, height);
+    fill_plane(src_buf.as_mut_slice(), src_stride, &src_flat, width, height);
+    let (mut dst_buf, dst_stride) = alloc_aligned_plane(width, height);
 
     let ast = cranexpr_parser::parse_expr(expr).unwrap();
     let compiled = compile_jit(&ast, ComponentType::U8, &[ComponentType::U8], None, &[])
       .expect("should compile expr");
 
-    let stride = row_padded as i64;
-    let src_ptrs = [src_flat.as_ptr()];
-    let src_strides = [stride];
+    let src_ptrs = [src_buf.as_ptr()];
+    let src_strides = [src_stride as i64];
 
     unsafe {
       compiled.invoke(
-        &mut dst_flat[..],
-        stride,
+        dst_buf.as_mut_slice(),
+        dst_stride as i64,
         &src_ptrs,
         &src_strides,
         width as i32,
@@ -1362,8 +1434,9 @@ mod tests {
       );
     }
 
+    let packed = unpack_plane::<u8>(dst_buf.as_slice(), dst_stride, width, height);
     (0..height)
-      .map(|y| dst_flat[y * row_padded..y * row_padded + width].to_vec())
+      .map(|y| packed[y * width..y * width + width].to_vec())
       .collect()
   }
 
@@ -1372,26 +1445,23 @@ mod tests {
     let width = src_rows[0].len();
     assert!(src_rows.iter().all(|r| r.len() == width));
 
-    let row_padded: usize = std::cmp::max(16, width.next_multiple_of(16));
-
-    let mut src_flat: Vec<u16> = vec![0; row_padded * height];
-    for (y, row) in src_rows.iter().enumerate() {
-      src_flat[y * row_padded..y * row_padded + width].copy_from_slice(row);
-    }
-    let mut dst_flat: Vec<u16> = vec![0; row_padded * height];
+    let row_bytes = std::mem::size_of_val(src_rows[0]);
+    let src_flat: Vec<u16> = src_rows.iter().flat_map(|r| r.iter().copied()).collect();
+    let (mut src_buf, src_stride) = alloc_aligned_plane(row_bytes, height);
+    fill_plane(src_buf.as_mut_slice(), src_stride, &src_flat, width, height);
+    let (mut dst_buf, dst_stride) = alloc_aligned_plane(row_bytes, height);
 
     let ast = cranexpr_parser::parse_expr(expr).unwrap();
     let compiled = compile_jit(&ast, ComponentType::U16, &[ComponentType::U16], None, &[])
       .expect("should compile expr");
 
-    let stride = (row_padded * std::mem::size_of::<u16>()) as i64;
-    let src_ptrs = [src_flat.as_ptr().cast::<u8>()];
-    let src_strides = [stride];
+    let src_ptrs = [src_buf.as_ptr()];
+    let src_strides = [src_stride as i64];
 
     unsafe {
       compiled.invoke(
-        &mut dst_flat[..],
-        stride,
+        dst_buf.as_mut_slice(),
+        dst_stride as i64,
         &src_ptrs,
         &src_strides,
         width as i32,
@@ -1401,8 +1471,9 @@ mod tests {
       );
     }
 
+    let packed = unpack_plane::<u16>(dst_buf.as_slice(), dst_stride, width, height);
     (0..height)
-      .map(|y| dst_flat[y * row_padded..y * row_padded + width].to_vec())
+      .map(|y| packed[y * width..y * width + width].to_vec())
       .collect()
   }
 
