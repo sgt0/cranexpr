@@ -55,7 +55,7 @@ pub(crate) fn translate_expr(
         UnOp::Cosine => translate_float_intrinsic_call(fx, "cosf", &[x]),
         UnOp::Exp => translate_float_intrinsic_call(fx, "expf", &[x]),
         UnOp::Floor => fx.bcx.ins().floor(x),
-        UnOp::Round => translate_float_intrinsic_call(fx, "roundf", &[x]),
+        UnOp::Round => fx.bcx.ins().nearest(x),
         UnOp::Log => translate_float_intrinsic_call(fx, "logf", &[x]),
         UnOp::Neg => fx.bcx.ins().fneg(x),
         UnOp::BitNot => {

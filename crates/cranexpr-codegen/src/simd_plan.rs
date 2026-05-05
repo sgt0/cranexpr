@@ -88,6 +88,7 @@ const fn is_unop_simd_eligible(op: UnOp) -> bool {
       | UnOp::Not
       | UnOp::BitNot
       | UnOp::Floor
+      | UnOp::Round
       | UnOp::Trunc
       | UnOp::Sine
       | UnOp::Cosine
