@@ -11,15 +11,9 @@ pub(crate) struct SimdPlan {
 
 pub(crate) fn try_simd_plan(
   ast: &[Expr],
-  dst_type: ComponentType,
-  src_types: &[ComponentType],
+  _dst_type: ComponentType,
+  _src_types: &[ComponentType],
 ) -> Option<SimdPlan> {
-  if dst_type != ComponentType::F32 {
-    return None;
-  }
-  if src_types.iter().any(|t| *t != ComponentType::F32) {
-    return None;
-  }
   if ast.is_empty() {
     return None;
   }

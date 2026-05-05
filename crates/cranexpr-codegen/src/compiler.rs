@@ -20,7 +20,9 @@ use crate::errors::{CodegenError, CodegenResult};
 use crate::pointer::Pointer;
 use crate::simd_plan::try_simd_plan;
 use crate::translate::{codegen_pixel_offset, translate_expr};
-use crate::translate_simd::{simd_lane_offsets_f32x4, translate_expr_simd};
+use crate::translate_simd::{
+  load_pixel_vec_f32x4, simd_lane_offsets_f32x4, store_pixel_vec_f32x4, translate_expr_simd,
+};
 
 pub(crate) const SRC_MEMFLAGS: MemFlags = MemFlags::trusted().with_readonly().with_can_move();
 const FRAME_PROP_MEMFLAGS: MemFlags = MemFlags::trusted().with_readonly().with_can_move();
@@ -324,20 +326,16 @@ fn build_entry_fn(
         Ok(())
       };
 
-    let f32_bytes = ComponentType::F32.bytes() as i64;
     let lane_offsets_val = simd_plan.as_ref().map(|_| simd_lane_offsets_f32x4(&mut fx));
+    let src_types_owned = src_types.to_vec();
     let simd_pixel_body =
       |fx: &mut FunctionCx<'_, '_>, y_coord: Value, x_coord: Value| -> CodegenResult<()> {
         codegen_variable(fx, "X", x_coord);
 
-        for var_idx in 0..src_types.len() {
+        for (var_idx, src_type) in src_types_owned.iter().enumerate() {
           let (src_ptr, pixel_offset) =
-            codegen_pixel_offset(fx, var_idx, x_coord, y_coord, ComponentType::F32);
-          let val = src_ptr.offset_value(fx, pixel_offset).load(
-            fx,
-            types::F32X4,
-            SRC_MEMFLAGS.with_aligned(),
-          );
+            codegen_pixel_offset(fx, var_idx, x_coord, y_coord, *src_type);
+          let val = load_pixel_vec_f32x4(fx, src_ptr, pixel_offset, *src_type, true);
 
           let var = fx.bcx.declare_var(types::F32X4);
           fx.bcx.def_var(var, val);
@@ -362,14 +360,9 @@ fn build_entry_fn(
         };
 
         let dest_row_offset = fx.bcx.ins().imul(y_coord, dst_stride);
-        let dest_col_offset = fx.bcx.ins().imul_imm(x_coord, f32_bytes);
+        let dest_col_offset = fx.bcx.ins().imul_imm(x_coord, dst_type.bytes() as i64);
         let dest_offset = fx.bcx.ins().iadd(dest_row_offset, dest_col_offset);
-        // VapourSynth guarantees row strides are aligned to at least 32 bytes.
-        dest_ptr.offset_value(fx, dest_offset).store(
-          fx,
-          expr_val,
-          MemFlags::trusted().with_aligned(),
-        );
+        store_pixel_vec_f32x4(fx, dest_ptr, dest_offset, expr_val, dst_type);
 
         fx.variables
           .retain(|k, _| !k.starts_with("simd_") && !k.starts_with("src"));
@@ -1415,5 +1408,195 @@ mod tests {
     let src: &[&[f32]] = &[&[10.0, 20.0, 30.0, 40.0]];
     let out = run_expr_padded("-1 0 x[]", src, Some(BoundaryMode::Mirror));
     assert_eq!(out, vec![vec![10.0, 10.0, 10.0, 10.0]]);
+  }
+
+  fn run_expr_u8_padded(expr: &str, src_rows: &[&[u8]]) -> Vec<Vec<u8>> {
+    let height = src_rows.len();
+    let width = src_rows[0].len();
+    assert!(src_rows.iter().all(|r| r.len() == width));
+
+    let row_padded: usize = std::cmp::max(32, width.next_multiple_of(32));
+
+    let mut src_flat: Vec<u8> = vec![0; row_padded * height];
+    for (y, row) in src_rows.iter().enumerate() {
+      src_flat[y * row_padded..y * row_padded + width].copy_from_slice(row);
+    }
+    let mut dst_flat: Vec<u8> = vec![0; row_padded * height];
+
+    let ast = cranexpr_parser::parse_expr(expr).unwrap();
+    let compiled = compile_jit(&ast, ComponentType::U8, &[ComponentType::U8], None, &[])
+      .expect("should compile expr");
+
+    let stride = row_padded as i64;
+    let src_ptrs = [src_flat.as_ptr()];
+    let src_strides = [stride];
+
+    unsafe {
+      compiled.invoke(
+        &mut dst_flat[..],
+        stride,
+        &src_ptrs,
+        &src_strides,
+        width as i32,
+        height as i32,
+        0,
+        &[],
+      );
+    }
+
+    (0..height)
+      .map(|y| dst_flat[y * row_padded..y * row_padded + width].to_vec())
+      .collect()
+  }
+
+  fn run_expr_u16_padded(expr: &str, src_rows: &[&[u16]]) -> Vec<Vec<u16>> {
+    let height = src_rows.len();
+    let width = src_rows[0].len();
+    assert!(src_rows.iter().all(|r| r.len() == width));
+
+    let row_padded: usize = std::cmp::max(16, width.next_multiple_of(16));
+
+    let mut src_flat: Vec<u16> = vec![0; row_padded * height];
+    for (y, row) in src_rows.iter().enumerate() {
+      src_flat[y * row_padded..y * row_padded + width].copy_from_slice(row);
+    }
+    let mut dst_flat: Vec<u16> = vec![0; row_padded * height];
+
+    let ast = cranexpr_parser::parse_expr(expr).unwrap();
+    let compiled = compile_jit(&ast, ComponentType::U16, &[ComponentType::U16], None, &[])
+      .expect("should compile expr");
+
+    let stride = (row_padded * std::mem::size_of::<u16>()) as i64;
+    let src_ptrs = [src_flat.as_ptr().cast::<u8>()];
+    let src_strides = [stride];
+
+    unsafe {
+      compiled.invoke(
+        &mut dst_flat[..],
+        stride,
+        &src_ptrs,
+        &src_strides,
+        width as i32,
+        height as i32,
+        0,
+        &[],
+      );
+    }
+
+    (0..height)
+      .map(|y| dst_flat[y * row_padded..y * row_padded + width].to_vec())
+      .collect()
+  }
+
+  #[rstest]
+  fn test_simd_u8_identity() {
+    let src: &[&[u8]] = &[&[0, 1, 2, 3, 10, 20, 30, 40]];
+    let out = run_expr_u8_padded("x", src);
+    assert_eq!(out, vec![vec![0, 1, 2, 3, 10, 20, 30, 40]]);
+  }
+
+  #[rstest]
+  fn test_simd_u8_arithmetic() {
+    let src: &[&[u8]] = &[&[0, 1, 2, 3, 4, 5, 6, 7]];
+    let out = run_expr_u8_padded("x 2 *", src);
+    assert_eq!(out, vec![vec![0, 2, 4, 6, 8, 10, 12, 14]]);
+  }
+
+  #[rstest]
+  fn test_simd_u8_saturating_store() {
+    let src: &[&[u8]] = &[&[0, 50, 100, 150, 200, 250, 255, 255]];
+    let out = run_expr_u8_padded("x 2 *", src);
+    assert_eq!(out, vec![vec![0, 100, 200, 255, 255, 255, 255, 255]]);
+  }
+
+  #[rstest]
+  fn test_simd_u8_negative_saturation() {
+    let src: &[&[u8]] = &[&[0, 5, 9, 10, 15, 20, 100, 200]];
+    let out = run_expr_u8_padded("x 10 -", src);
+    assert_eq!(out, vec![vec![0, 0, 0, 0, 5, 10, 90, 190]]);
+  }
+
+  #[rstest]
+  fn test_simd_u8_rel_access_right() {
+    let src: &[&[u8]] = &[&[10, 20, 30, 40, 50, 60, 70, 80]];
+    let out = run_expr_u8_padded("x[1,0]", src);
+    assert_eq!(out, vec![vec![20, 30, 40, 50, 60, 70, 80, 80]]);
+  }
+
+  #[rstest]
+  fn test_simd_u8_non_multiple_width_tail() {
+    let src: &[&[u8]] = &[&[1, 2, 3, 4, 5, 6, 7]];
+    let out = run_expr_u8_padded("x 3 +", src);
+    assert_eq!(out, vec![vec![4, 5, 6, 7, 8, 9, 10]]);
+  }
+
+  #[rstest]
+  fn test_simd_u16_identity() {
+    let src: &[&[u16]] = &[&[0, 1, 2, 3, 1000, 2000, 30000, 60000]];
+    let out = run_expr_u16_padded("x", src);
+    assert_eq!(out, vec![vec![0, 1, 2, 3, 1000, 2000, 30000, 60000]]);
+  }
+
+  #[rstest]
+  fn test_simd_u16_arithmetic_with_saturation() {
+    let src: &[&[u16]] = &[&[0, 100, 1000, 10000, 20000, 30000, 40000, 60000]];
+    let out = run_expr_u16_padded("x 3 *", src);
+    assert_eq!(
+      out,
+      vec![vec![0, 300, 3000, 30000, 60000, 65535, 65535, 65535]]
+    );
+  }
+
+  #[rstest]
+  fn test_simd_u16_rel_access_left() {
+    let src: &[&[u16]] = &[&[10, 20, 30, 40, 50, 60, 70, 80]];
+    let out = run_expr_u16_padded("x[-1,0]", src);
+    assert_eq!(out, vec![vec![10, 10, 20, 30, 40, 50, 60, 70]]);
+  }
+
+  #[rstest]
+  fn test_simd_mixed_sources_u8_u16() {
+    let x_rows: &[u8] = &[10, 20, 30, 40, 50, 60, 70, 80];
+    let y_rows: &[u16] = &[100, 200, 300, 400, 500, 600, 700, 800];
+    let width = 8usize;
+    let height = 1usize;
+    let row_padded_u8 = 32usize;
+    let row_padded_u16 = 16usize;
+
+    let mut x_flat = vec![0u8; row_padded_u8 * height];
+    x_flat[..width].copy_from_slice(x_rows);
+    let mut y_flat = vec![0u16; row_padded_u16 * height];
+    y_flat[..width].copy_from_slice(y_rows);
+    let mut dst_flat = vec![0u16; row_padded_u16 * height];
+
+    let ast = cranexpr_parser::parse_expr("x y +").unwrap();
+    let compiled = compile_jit(
+      &ast,
+      ComponentType::U16,
+      &[ComponentType::U8, ComponentType::U16],
+      None,
+      &[],
+    )
+    .expect("should compile expr");
+
+    let src_ptrs = [x_flat.as_ptr(), y_flat.as_ptr().cast::<u8>()];
+    let src_strides = [row_padded_u8 as i64, (row_padded_u16 * 2) as i64];
+    let dst_stride = (row_padded_u16 * 2) as i64;
+
+    unsafe {
+      compiled.invoke(
+        &mut dst_flat[..],
+        dst_stride,
+        &src_ptrs,
+        &src_strides,
+        width as i32,
+        height as i32,
+        0,
+        &[],
+      );
+    }
+
+    let out: Vec<u16> = dst_flat[..width].to_vec();
+    assert_eq!(out, vec![110, 220, 330, 440, 550, 660, 770, 880]);
   }
 }
