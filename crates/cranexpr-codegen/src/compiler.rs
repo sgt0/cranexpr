@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::f32::consts::PI;
+use std::ptr::NonNull;
 use std::sync::Arc;
 
 use cranelift::codegen::ir::immediates::Offset32;
@@ -51,6 +52,9 @@ pub(crate) struct FunctionCx<'m, 'clif> {
   pub(crate) height: Value,
 
   pub(crate) comments: CommentWriter,
+
+  /// Memoization cache.
+  pub(crate) cache: HashMap<NonNull<Expr>, Value>,
 }
 
 struct BuiltEntryFn {
@@ -229,6 +233,7 @@ fn build_entry_fn(
       width,
       height,
       comments: CommentWriter::new(),
+      cache: HashMap::new(),
     };
 
     // Constants.
@@ -294,6 +299,7 @@ fn build_entry_fn(
         fx.variables
           .retain(|k, _| !k.starts_with("simd_") && !k.starts_with("src"));
         fx.user_variables.clear();
+        fx.cache.clear();
 
         Ok(())
       };
