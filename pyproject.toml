@@ -40,12 +40,21 @@ select = ["E", "F", "FA", "UP", "B", "SIM", "I", "RUF022"]
 ignore = []
 
 [tool.cibuildwheel]
+build-frontend = "build[uv]"
 build = "cp312-*"     # Only need to target the minimum Python version.
 skip = [
     "*-musllinux_*",  # musl targets do not support cdylib by design.
     "*-win32",        # Not supported by VapourSynth.
 ]
 
+[tool.cibuildwheel.linux]
+before-all = "curl -sSf https://sh.rustup.rs | sh -s -- -y"
+environment = "PATH=$HOME/.cargo/bin:$PATH"
+
 [tool.cibuildwheel.macos.environment]
-# Rust's minimum macOS target is 10.12.
-MACOSX_DEPLOYMENT_TARGET = "10.12"
+# VapourSynth's minimum macOS target is 13.0.
+MACOSX_DEPLOYMENT_TARGET = "13.0"
+
+[tool.cibuildwheel.windows]
+archs = ["AMD64"]
+before-all = "rustup target add x86_64-pc-windows-msvc"
