@@ -80,6 +80,12 @@ core.cranexpr.Expr([x], "x[-1,-1] x[0,-1] x[1,-1] x[-1,0] x x[1,0] x[-1,1] x[0,1
   `src0`, `src1`, `src2`, `src3`, `src4`, `src5`, etc., up to `w` being `src25`.
   Beyond that, use `srcN`.
 
+## Install
+
+```
+pip install vapoursynth-cranexpr
+```
+
 ## API
 
 ```python
