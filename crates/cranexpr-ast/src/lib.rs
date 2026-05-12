@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use num_derive::FromPrimitive;
 use serde::Serialize;
 use strum_macros::{Display, EnumString};
@@ -141,13 +143,13 @@ pub enum TernaryOp {
 #[derive(Clone, Debug, Serialize)]
 pub enum Expr {
   /// A binary operation (e.g., `a b +`, `a b *`).
-  Binary(BinOp, Box<Self>, Box<Self>),
+  Binary(BinOp, Arc<Self>, Arc<Self>),
 
   /// A unary operation (e.g., `x sin`, `x exp`).
-  Unary(UnOp, Box<Self>),
+  Unary(UnOp, Arc<Self>),
 
   /// A ternary operation (e.g., `x min_val max_val clip`).
-  Ternary(TernaryOp, Box<Self>, Box<Self>, Box<Self>),
+  Ternary(TernaryOp, Arc<Self>, Arc<Self>, Arc<Self>),
 
   /// A literal (e.g., `1e-06`).
   Lit(f32),
@@ -156,13 +158,13 @@ pub enum Expr {
   Ident(String),
 
   /// If/else, ternary.
-  IfElse(Box<Self>, Box<Self>, Box<Self>),
+  IfElse(Arc<Self>, Arc<Self>, Arc<Self>),
 
   /// Access of a frame property (e.g. `x.PlaneStatsAverage`).
   Prop(String, String),
 
   /// Store a value into a variable.
-  Store(String, Box<Self>),
+  Store(String, Arc<Self>),
 
   /// Load a value from a variable.
   Load(String),
@@ -188,10 +190,10 @@ pub enum Expr {
     clip: String,
 
     /// Absolute X coordinate.
-    x: Box<Self>,
+    x: Arc<Self>,
 
     /// Absolute Y coordinate.
-    y: Box<Self>,
+    y: Arc<Self>,
 
     /// Optional boundary mode override.
     ///

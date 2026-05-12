@@ -1,4 +1,5 @@
 use std::f32::consts::{FRAC_PI_2, LN_2, LOG2_E, PI};
+use std::ptr::NonNull;
 
 use cranelift::codegen::ir::{ConstantData, Endianness};
 use cranelift::prelude::*;
@@ -95,6 +96,19 @@ pub(crate) fn store_pixel_vec_f32x4(
 }
 
 pub(crate) fn translate_expr_simd(
+  fx: &mut FunctionCx<'_, '_>,
+  expr: &Expr,
+) -> Result<Value, CodegenError> {
+  let cache_key = NonNull::from(expr);
+  if let Some(&cached) = fx.cache.get(&cache_key) {
+    return Ok(cached);
+  }
+  let result = translate_expr_simd_inner(fx, expr)?;
+  fx.cache.insert(cache_key, result);
+  Ok(result)
+}
+
+fn translate_expr_simd_inner(
   fx: &mut FunctionCx<'_, '_>,
   expr: &Expr,
 ) -> Result<Value, CodegenError> {

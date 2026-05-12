@@ -3,19 +3,21 @@ mod sorting_network;
 
 pub use errors::ParseError;
 
+use std::sync::Arc;
+
 use cranexpr_ast::{BinOp, BoundaryMode, Expr, TernaryOp, UnOp};
 use cranexpr_lexer::{TokenKind, tokenize_with_text};
 
 fn add_unary_op(stack: &mut Vec<Expr>, op: UnOp) -> Result<(), ParseError> {
   let x = stack.pop().ok_or(ParseError::StackUnderflow)?;
-  stack.push(Expr::Unary(op, Box::new(x)));
+  stack.push(Expr::Unary(op, Arc::new(x)));
   Ok(())
 }
 
 fn add_binary_op(stack: &mut Vec<Expr>, op: BinOp) -> Result<(), ParseError> {
   let right = stack.pop().ok_or(ParseError::StackUnderflow)?;
   let left = stack.pop().ok_or(ParseError::StackUnderflow)?;
-  stack.push(Expr::Binary(op, Box::new(left), Box::new(right)));
+  stack.push(Expr::Binary(op, Arc::new(left), Arc::new(right)));
   Ok(())
 }
 
@@ -23,7 +25,7 @@ fn add_ternary_op(stack: &mut Vec<Expr>, op: TernaryOp) -> Result<(), ParseError
   let c = stack.pop().ok_or(ParseError::StackUnderflow)?;
   let b = stack.pop().ok_or(ParseError::StackUnderflow)?;
   let a = stack.pop().ok_or(ParseError::StackUnderflow)?;
-  stack.push(Expr::Ternary(op, Box::new(a), Box::new(b), Box::new(c)));
+  stack.push(Expr::Ternary(op, Arc::new(a), Arc::new(b), Arc::new(c)));
   Ok(())
 }
 
@@ -96,8 +98,8 @@ pub fn parse_expr(expr: &str) -> Result<Vec<Expr>, ParseError> {
 
             stack.push(Expr::AbsAccess {
               clip: text.to_string(),
-              x: Box::new(x),
-              y: Box::new(y),
+              x: Arc::new(x),
+              y: Arc::new(y),
               boundary_mode,
             });
           } else {
@@ -256,8 +258,8 @@ pub fn parse_expr(expr: &str) -> Result<Vec<Expr>, ParseError> {
             let sj = start + j;
             let a = stack[si].clone();
             let b = stack[sj].clone();
-            stack[si] = Expr::Binary(BinOp::Max, Box::new(a.clone()), Box::new(b.clone()));
-            stack[sj] = Expr::Binary(BinOp::Min, Box::new(a), Box::new(b));
+            stack[si] = Expr::Binary(BinOp::Max, Arc::new(a.clone()), Arc::new(b.clone()));
+            stack[sj] = Expr::Binary(BinOp::Min, Arc::new(a), Arc::new(b));
           }
         }
         // `var!`: Pops the top value from the stack and stores it in a variable
@@ -265,7 +267,7 @@ pub fn parse_expr(expr: &str) -> Result<Vec<Expr>, ParseError> {
         else if tokens.peek().is_some_and(|(k, _)| *k == TokenKind::Bang) {
           tokens.next(); // Consume `!`.
           let value = stack.pop().ok_or(ParseError::StackUnderflow)?;
-          side_effects.push(Expr::Store(text.to_string(), Box::new(value)));
+          side_effects.push(Expr::Store(text.to_string(), Arc::new(value)));
         }
         // `var@`: Pushes the value of the variable `var` onto the stack.
         else if tokens.peek().is_some_and(|(k, _)| *k == TokenKind::At) {
@@ -344,7 +346,7 @@ pub fn parse_expr(expr: &str) -> Result<Vec<Expr>, ParseError> {
         let yes = stack.pop().ok_or(ParseError::StackUnderflow)?;
         let cond = stack.pop().ok_or(ParseError::StackUnderflow)?;
 
-        stack.push(Expr::IfElse(Box::new(cond), Box::new(yes), Box::new(no)));
+        stack.push(Expr::IfElse(Arc::new(cond), Arc::new(yes), Arc::new(no)));
       }
       _ => return Err(ParseError::UnrecognizedToken(text.to_string())),
     }
