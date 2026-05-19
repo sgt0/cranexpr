@@ -27,6 +27,7 @@ edition.workspace = true
 
 [lib]
 crate-type = ["cdylib"]
+test = false
 
 [dependencies]
 const-str = "=1.1.0"

@@ -3,6 +3,9 @@ name = "cranexpr-transforms"
 version.workspace = true
 edition.workspace = true
 
+[lib]
+doctest = false
+
 [dependencies]
 miette = "=7.6.0"
 thiserror = "=2.0.18"

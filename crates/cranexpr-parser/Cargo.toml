@@ -3,6 +3,9 @@ name = "cranexpr-parser"
 version.workspace = true
 edition.workspace = true
 
+[lib]
+doctest = false
+
 [dependencies]
 cranexpr-ast = { workspace = true }
 cranexpr-lexer = { workspace = true }
