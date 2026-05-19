@@ -10,4 +10,7 @@ use thiserror::Error;
 pub enum TransformError {
   #[error("Invalid clip identifier '{0}'.")]
   InvalidClipIdentifier(String),
+
+  #[error("Pixel access and per-pixel context are not allowed here: '{0}'.")]
+  PixelAccessNotAllowed(String),
 }
