@@ -18,6 +18,18 @@ pub enum CranexprError {
   #[error(transparent)]
   Codegen(#[from] cranexpr_codegen::errors::CodegenError),
 
+  #[error("Clips in clip_src differ in format or dimensions.")]
+  ClipSrcMismatch,
+
+  #[error("clip_src must not be empty.")]
+  EmptyClipSrc,
+
+  #[error("prop_src must not be empty.")]
+  EmptyPropSrc,
+
+  #[error("At least one expression is required.")]
+  NoExpression,
+
   #[error("Invalid frame property name '{0}'.")]
   InvalidFramePropertyName(String),
 
