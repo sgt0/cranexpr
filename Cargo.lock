@@ -399,7 +399,7 @@ checksum = "a3ceab9a53f7d362c89841fbaa8e63e44d47c40e91dc96ee6f777fca5d6b323b"
 
 [[package]]
 name = "cranexpr"
-version = "0.7.0"
+version = "0.8.0"
 dependencies = [
  "const-str",
  "cranexpr-ast",
@@ -415,7 +415,7 @@ dependencies = [
 
 [[package]]
 name = "cranexpr-ast"
-version = "0.7.0"
+version = "0.8.0"
 dependencies = [
  "num-derive",
  "num-traits",
@@ -426,7 +426,7 @@ dependencies = [
 
 [[package]]
 name = "cranexpr-cli"
-version = "0.7.0"
+version = "0.8.0"
 dependencies = [
  "clap",
  "cranexpr-ast",
@@ -437,7 +437,7 @@ dependencies = [
 
 [[package]]
 name = "cranexpr-codegen"
-version = "0.7.0"
+version = "0.8.0"
 dependencies = [
  "aligned-vec",
  "approx",
@@ -456,7 +456,7 @@ dependencies = [
 
 [[package]]
 name = "cranexpr-lexer"
-version = "0.7.0"
+version = "0.8.0"
 dependencies = [
  "insta",
  "rstest",
@@ -465,7 +465,7 @@ dependencies = [
 
 [[package]]
 name = "cranexpr-parser"
-version = "0.7.0"
+version = "0.8.0"
 dependencies = [
  "cranexpr-ast",
  "cranexpr-lexer",
@@ -476,7 +476,7 @@ dependencies = [
 
 [[package]]
 name = "cranexpr-transforms"
-version = "0.7.0"
+version = "0.8.0"
 dependencies = [
  "cranexpr-ast",
  "miette",
