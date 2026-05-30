@@ -447,6 +447,7 @@ dependencies = [
  "cranelift-native",
  "cranexpr-ast",
  "cranexpr-parser",
+ "cranexpr-transforms",
  "miette",
  "nanoid",
  "ndarray",
