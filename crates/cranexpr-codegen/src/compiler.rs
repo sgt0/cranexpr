@@ -12,6 +12,7 @@ use cranelift::{codegen::Context, prelude::FunctionBuilderContext};
 use cranelift_jit::{JITBuilder, JITModule};
 use cranelift_module::{FuncId, Linkage, Module, ModuleError};
 use cranexpr_ast::{BoundaryMode, Expr};
+use cranexpr_transforms::simplify;
 use nanoid::nanoid;
 
 use crate::MainFunction;
@@ -112,10 +113,11 @@ pub fn compile_jit(
   boundary_mode: Option<BoundaryMode>,
   required_frame_props: &[(usize, String)],
 ) -> Result<MainFunction, CodegenError> {
+  let ast: Vec<Expr> = ast.iter().map(simplify).collect();
   let mut jit_module = create_jit_module();
   let mut main_func = build_entry_fn(
     &mut jit_module,
-    ast,
+    &ast,
     dst_type,
     src_types,
     boundary_mode,
@@ -149,10 +151,11 @@ pub fn compile_clif(
   boundary_mode: Option<BoundaryMode>,
   required_frame_props: &[(usize, String)],
 ) -> Result<String, CodegenError> {
+  let ast: Vec<Expr> = ast.iter().map(simplify).collect();
   let mut jit_module = create_jit_module();
   let mut built = build_entry_fn(
     &mut jit_module,
-    ast,
+    &ast,
     dst_type,
     src_types,
     boundary_mode,
@@ -187,8 +190,9 @@ pub fn compile_jit_select(
   num_prop_clips: usize,
   required_frame_props: &[(usize, String)],
 ) -> Result<SelectFunction, CodegenError> {
+  let ast: Vec<Expr> = ast.iter().map(simplify).collect();
   let mut jit_module = create_jit_module();
-  let mut built = build_select_fn(&mut jit_module, ast, num_prop_clips, required_frame_props)?;
+  let mut built = build_select_fn(&mut jit_module, &ast, num_prop_clips, required_frame_props)?;
 
   if let Err(err) = jit_module.define_function(built.func_id, &mut built.ctx) {
     let err_msg = match err {
