@@ -107,6 +107,30 @@ cranexpr.Expr(
 - `boundary` — Boundary mode. `0` for clamping, `1` for mirroring.
 
 ```python
+cranexpr.PropExpr(
+  clips: vs.VideoNode | Sequence[vs.VideoNode],
+  **kwargs: str,
+) -> vs.VideoNode
+```
+
+- `clips` — Input video nodes. The first clip's format is used for the output.
+- `**kwargs` — Each keyword argument maps a frame property name to a RPN
+  expression. The expression is evaluated once per frame and the result is
+  written back as a frame property on the output.
+
+`PropExpr` evaluates expressions that produce scalar values and stores them as
+frame properties on the output frame. All expressions are evaluated before any
+properties are written.
+
+If the computed value is an exact integer, then it is stored as an integer frame
+property. Otherwise it is stored as a float.
+
+`PropExpr` supports all operators supported by `Expr` except those that access
+pixel values (`x`/`y`/`srcN` as pixel values, relative pixel access like
+`x[-1,0]`, absolute pixel access like `x[]`, and the per-pixel coordinate
+variables `X` and `Y`).
+
+```python
 cranexpr.Select(
   clip_src: vs.VideoNode | Sequence[vs.VideoNode],
   prop_src: vs.VideoNode | Sequence[vs.VideoNode],
