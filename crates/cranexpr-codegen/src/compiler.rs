@@ -987,11 +987,30 @@ mod tests {
       ("x 6 pow", 6.0),
       ("x 7 pow", 7.0),
       ("x 8 pow", 8.0),
+      ("x 9 pow", 9.0),
+      ("x 11 pow", 11.0),
+      ("x 13 pow", 13.0),
+      ("x 15 pow", 15.0),
+      ("x 17 pow", 17.0),
+      ("x 19 pow", 19.0),
     ] {
       let out = run_expr_padded(expr, src, None);
       for (i, &v) in src[0].iter().enumerate() {
         let expected = v.powf(exponent);
         assert_relative_eq!(out[0][i], expected, epsilon = 5e-5);
+      }
+    }
+  }
+
+  #[rstest]
+  fn test_pow_negative_base_large_exponent() {
+    let src: &[&[f32]] = &[&[-0.5, -1.5, -2.0, -0.25]];
+    for exp in [9, 11, 13, 15, 17, 19] {
+      let expr = format!("x {exp} pow");
+      let out = run_expr_padded(&expr, src, None);
+      for (i, &v) in src[0].iter().enumerate() {
+        let expected = v.powi(exp);
+        assert_relative_eq!(out[0][i], expected, epsilon = 5e-3);
       }
     }
   }
