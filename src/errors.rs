@@ -45,6 +45,9 @@ pub enum CranexprError {
   #[error("Unrecognized boundary mode.")]
   UnrecognizedBoundaryMode,
 
+  #[error("PropExpr value for '{0}' must be a string expression.")]
+  PropExprValueNotString(String),
+
   #[error("Only clips with constant format and dimensions are allowed")]
   VariableFormat,
 }

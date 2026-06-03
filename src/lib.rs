@@ -1,11 +1,13 @@
 mod component_type;
 mod errors;
 mod expr;
+mod prop_expr;
 mod select;
 
 use vapoursynth4_rs::declare_plugin;
 
 use crate::expr::CranexprFilter;
+use crate::prop_expr::PropExprFilter;
 use crate::select::SelectFilter;
 
 declare_plugin!(
@@ -16,5 +18,6 @@ declare_plugin!(
   VAPOURSYNTH_API_VERSION,
   0,
   (CranexprFilter, None),
+  (PropExprFilter, None),
   (SelectFilter, None)
 );
