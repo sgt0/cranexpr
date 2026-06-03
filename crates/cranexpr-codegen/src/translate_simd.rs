@@ -611,6 +611,19 @@ fn log_simd(fx: &mut FunctionCx<'_, '_>, x: Value) -> Value {
   vselect_f32x4(fx, is_zero, neg_inf, r)
 }
 
+pub(crate) fn fpow_by_squaring(fx: &mut FunctionCx<'_, '_>, base: Value, exp: u32) -> Value {
+  debug_assert!(exp >= 3);
+  let bits = u32::BITS - exp.leading_zeros();
+  let mut result = base;
+  for i in (0..bits - 1).rev() {
+    result = fx.bcx.ins().fmul(result, result);
+    if (exp >> i) & 1 == 1 {
+      result = fx.bcx.ins().fmul(result, base);
+    }
+  }
+  result
+}
+
 fn pow_simd(
   fx: &mut FunctionCx<'_, '_>,
   base: &Expr,
@@ -633,30 +646,8 @@ fn pow_simd(
       return Ok(fx.bcx.ins().sqrt(base_val));
     }
     let exp_u32 = *exp as u32;
-    if *exp == exp_u32 as f32 && (3..=8).contains(&exp_u32) {
-      let x2 = fx.bcx.ins().fmul(base_val, base_val);
-      return Ok(match exp_u32 {
-        3 => fx.bcx.ins().fmul(x2, base_val),
-        4 => fx.bcx.ins().fmul(x2, x2),
-        5 => {
-          let x4 = fx.bcx.ins().fmul(x2, x2);
-          fx.bcx.ins().fmul(x4, base_val)
-        }
-        6 => {
-          let x3 = fx.bcx.ins().fmul(x2, base_val);
-          fx.bcx.ins().fmul(x3, x3)
-        }
-        7 => {
-          let x3 = fx.bcx.ins().fmul(x2, base_val);
-          let x6 = fx.bcx.ins().fmul(x3, x3);
-          fx.bcx.ins().fmul(x6, base_val)
-        }
-        8 => {
-          let x4 = fx.bcx.ins().fmul(x2, x2);
-          fx.bcx.ins().fmul(x4, x4)
-        }
-        _ => unreachable!(),
-      });
+    if *exp == exp_u32 as f32 && exp_u32 >= 3 {
+      return Ok(fpow_by_squaring(fx, base_val, exp_u32));
     }
   }
 
