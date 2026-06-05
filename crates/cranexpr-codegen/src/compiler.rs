@@ -1037,6 +1037,24 @@ mod tests {
   }
 
   #[rstest]
+  fn test_pow_negative_integer_exponent() {
+    let src: &[&[f32]] = &[&[0.5, 2.0, 3.0, 4.0]];
+    for exp in [-1, -2, -3, -5, -8, -127] {
+      let expr = format!("x {exp} pow");
+      let out = run_expr_padded(&expr, src, None);
+      for (i, &v) in src[0].iter().enumerate() {
+        let expected = v.powi(exp);
+        assert_relative_eq!(out[0][i], expected, epsilon = 1e-4);
+      }
+    }
+  }
+
+  #[rstest]
+  fn test_pow_negative_exponent_zero_base() {
+    assert_relative_eq!(run_expr("0 2 -127 pow /"), 0.0);
+  }
+
+  #[rstest]
   #[case("2 sqrt", 2f32.sqrt())]
   #[case("3 sqrt", 3f32.sqrt())]
   fn test_sqrt(#[case] expr: &str, #[case] expected: f32) {

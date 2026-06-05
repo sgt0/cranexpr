@@ -649,6 +649,19 @@ fn pow_simd(
     if *exp == exp_u32 as f32 && exp_u32 >= 3 {
       return Ok(fpow_by_squaring(fx, base_val, exp_u32));
     }
+    let exp_i32 = *exp as i32;
+    if *exp == exp_i32 as f32 && exp_i32 <= -1 {
+      let abs_exp = exp_i32.unsigned_abs();
+      let pow_abs = if abs_exp == 1 {
+        base_val
+      } else if abs_exp == 2 {
+        fx.bcx.ins().fmul(base_val, base_val)
+      } else {
+        fpow_by_squaring(fx, base_val, abs_exp)
+      };
+      let one = splat_f32(fx, 1.0);
+      return Ok(fx.bcx.ins().fdiv(one, pow_abs));
+    }
   }
 
   let exp_val = translate_expr_simd(fx, exponent)?;
