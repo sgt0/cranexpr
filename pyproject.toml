@@ -7,7 +7,7 @@ requires-python = ">=3.12"
 license = "Apache-2.0"
 license-files = ["LICENSE.md"]
 
-dependencies = ["vapoursynth>=76"]
+dependencies = ["vapoursynth>=75"]
 
 [dependency-groups]
 dev = [

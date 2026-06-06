@@ -29,6 +29,10 @@
     {
       "matchDepNames": ["python"],
       "enabled": false
+    },
+    {
+      "matchDepNames": ["vapoursynth"],
+      "enabled": false
     }
   ]
 }
