@@ -39,6 +39,9 @@ jobs:
           - os: macos-26
             target: aarch64-apple-darwin
             ext: dylib
+          - os: macos-26-intel
+            target: x86_64-apple-darwin
+            ext: dylib
     runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout code
@@ -75,7 +78,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-24.04, macos-26, windows-latest]
+        os: [ubuntu-24.04, macos-26, macos-26-intel, windows-latest]
     runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout code
