@@ -14,7 +14,7 @@ declare_plugin!(
   c"sgt.cranexpr",
   c"cranexpr",
   c"Cranelift Expr",
-  (0, 9),
+  (0, 10),
   VAPOURSYNTH_API_VERSION,
   0,
   (CranexprFilter, None),
