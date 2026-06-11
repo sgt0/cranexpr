@@ -10,7 +10,7 @@ doctest = false
 serde = { version = "=1.0.228", features = ["derive"] }
 
 [dev-dependencies]
-insta = { version = "=1.47.2", features = ["yaml"] }
+insta = { version = "=1.48.0", features = ["yaml"] }
 rstest = "=0.26.1"
 
 [lints]
