@@ -1243,6 +1243,19 @@ mod tests {
   }
 
   #[rstest]
+  #[case("3 5 max", 5.0)]
+  #[case("5 3 max", 5.0)]
+  #[case("5 5 max", 5.0)]
+  #[case("-2 -7 max", -2.0)]
+  #[case("3 5 min", 3.0)]
+  #[case("5 3 min", 3.0)]
+  #[case("5 5 min", 5.0)]
+  #[case("-2 -7 min", -7.0)]
+  fn test_max_min(#[case] expr: &str, #[case] expected: f32) {
+    assert_relative_eq!(run_expr(expr), expected);
+  }
+
+  #[rstest]
   #[case("10 0 20 clip", 10.0)]
   #[case("-10 0 20 clip", 0.0)]
   #[case("30 0 20 clip", 20.0)]
