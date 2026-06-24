@@ -148,8 +148,8 @@ fn translate_expr_simd_inner(
         TernaryOp::Clip => {
           let min_val = b;
           let max_val = c;
-          let min_result = fx.bcx.ins().fmin(a, max_val);
-          fx.bcx.ins().fmax(min_result, min_val)
+          let min_result = fmin_simd(fx, a, max_val);
+          fmax_simd(fx, min_result, min_val)
         }
       })
     }
@@ -343,6 +343,22 @@ fn vselect_f32x4(
     .bitcast(types::I32X4, MemFlags::new(), false_val);
   let selected = fx.bcx.ins().bitselect(mask, t_bits, f_bits);
   fx.bcx.ins().bitcast(VEC_TYPE, MemFlags::new(), selected)
+}
+
+/// Vectorized maximum.
+fn fmax_simd(fx: &mut FunctionCx<'_, '_>, lhs: Value, rhs: Value) -> Value {
+  // Benchmarked as faster than Cranelift's `fmax` since we shouldn't need its
+  // full IEEE-754 semantics.
+  let cmp = fx.bcx.ins().fcmp(FloatCC::GreaterThan, lhs, rhs);
+  vselect_f32x4(fx, cmp, lhs, rhs)
+}
+
+/// Vectorized minimum.
+fn fmin_simd(fx: &mut FunctionCx<'_, '_>, lhs: Value, rhs: Value) -> Value {
+  // Benchmarked as faster than Cranelift's `fmin` since we shouldn't need its
+  // full IEEE-754 semantics.
+  let cmp = fx.bcx.ins().fcmp(FloatCC::LessThan, lhs, rhs);
+  vselect_f32x4(fx, cmp, lhs, rhs)
 }
 
 /// Returns a value with the magnitude of `mag` and the sign of `sig`.
@@ -779,8 +795,8 @@ fn codegen_float_binop_simd(
       let result = fx.bcx.ins().fcmp(float_cc, lhs, rhs);
       bool_to_float_simd(fx, result)
     }
-    BinOp::Max => fx.bcx.ins().fmax(lhs, rhs),
-    BinOp::Min => fx.bcx.ins().fmin(lhs, rhs),
+    BinOp::Max => fmax_simd(fx, lhs, rhs),
+    BinOp::Min => fmin_simd(fx, lhs, rhs),
     BinOp::And | BinOp::Or | BinOp::Xor => {
       let zero = splat_f32(fx, 0.0);
       let lhs_bool = fx.bcx.ins().fcmp(FloatCC::GreaterThan, lhs, zero);
