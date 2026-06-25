@@ -67,10 +67,13 @@ pub(crate) fn store_pixel_vec_f32x4(
     ComponentType::U8 | ComponentType::U16 => {
       let zero = splat_f32(fx, 0.0);
       let peak = splat_f32(fx, dst_type.peak_value());
-      let clamped = fx.bcx.ins().fmin(value, peak);
-      let clamped = fx.bcx.ins().fmax(clamped, zero);
+      let clamped = fmax_simd(fx, value, zero);
+      let clamped = fmin_simd(fx, clamped, peak);
       let rounded = fx.bcx.ins().nearest(clamped);
-      let i32x4 = fx.bcx.ins().fcvt_to_uint_sat(types::I32X4, rounded);
+
+      // `value` is now clamped to [0, peak], so a signed saturating conversion
+      // is identical to an unsigned one, but cheaper.
+      let i32x4 = fx.bcx.ins().fcvt_to_sint_sat(types::I32X4, rounded);
       let byte_flags = MemFlags::new().with_endianness(Endianness::Little);
       match dst_type {
         ComponentType::U16 => {
