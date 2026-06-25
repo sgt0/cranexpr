@@ -62,7 +62,7 @@ pub(crate) fn store_pixel_vec_f32x4(
   match dst_type {
     ComponentType::F32 => {
       // VapourSynth guarantees row strides are aligned to at least 32 bytes.
-      ptr.store(fx, value, MemFlags::trusted().with_aligned());
+      ptr.store(fx, value, MemFlagsData::trusted().with_aligned());
     }
     ComponentType::U8 | ComponentType::U16 => {
       let zero = splat_f32(fx, 0.0);
@@ -74,14 +74,14 @@ pub(crate) fn store_pixel_vec_f32x4(
       // `value` is now clamped to [0, peak], so a signed saturating conversion
       // is identical to an unsigned one, but cheaper.
       let i32x4 = fx.bcx.ins().fcvt_to_sint_sat(types::I32X4, rounded);
-      let byte_flags = MemFlags::new().with_endianness(Endianness::Little);
+      let byte_flags = MemFlagsData::new().with_endianness(Endianness::Little);
       match dst_type {
         ComponentType::U16 => {
           // Narrow I32X4 -> I16X8 with unsigned saturation.
           let narrowed = fx.bcx.ins().unarrow(i32x4, i32x4);
           let as_i64x2 = fx.bcx.ins().bitcast(types::I64X2, byte_flags, narrowed);
           let low = fx.bcx.ins().extractlane(as_i64x2, 0);
-          ptr.store(fx, low, MemFlags::trusted());
+          ptr.store(fx, low, MemFlagsData::trusted());
         }
         ComponentType::U8 => {
           // Narrow I32X4 -> I16X8 (unsigned saturating),
@@ -90,7 +90,7 @@ pub(crate) fn store_pixel_vec_f32x4(
           let n8 = fx.bcx.ins().unarrow(n16, n16);
           let as_i32x4 = fx.bcx.ins().bitcast(types::I32X4, byte_flags, n8);
           let low = fx.bcx.ins().extractlane(as_i32x4, 0);
-          ptr.store(fx, low, MemFlags::trusted());
+          ptr.store(fx, low, MemFlagsData::trusted());
         }
         ComponentType::F32 => unreachable!(),
       }
@@ -325,7 +325,7 @@ fn bool_to_float_simd(fx: &mut FunctionCx<'_, '_>, mask: Value) -> Value {
   let one_bits = fx.bcx.ins().iconst(types::I32, i64::from(1.0f32.to_bits()));
   let one_bits_splat = fx.bcx.ins().splat(types::I32X4, one_bits);
   let anded = fx.bcx.ins().band(mask, one_bits_splat);
-  fx.bcx.ins().bitcast(VEC_TYPE, MemFlags::new(), anded)
+  fx.bcx.ins().bitcast(VEC_TYPE, MemFlagsData::new(), anded)
 }
 
 /// Picks lanes from `true_val` where `mask` is all-1s, and from `false_val`
@@ -339,13 +339,15 @@ fn vselect_f32x4(
   let t_bits = fx
     .bcx
     .ins()
-    .bitcast(types::I32X4, MemFlags::new(), true_val);
+    .bitcast(types::I32X4, MemFlagsData::new(), true_val);
   let f_bits = fx
     .bcx
     .ins()
-    .bitcast(types::I32X4, MemFlags::new(), false_val);
+    .bitcast(types::I32X4, MemFlagsData::new(), false_val);
   let selected = fx.bcx.ins().bitselect(mask, t_bits, f_bits);
-  fx.bcx.ins().bitcast(VEC_TYPE, MemFlags::new(), selected)
+  fx.bcx
+    .ins()
+    .bitcast(VEC_TYPE, MemFlagsData::new(), selected)
 }
 
 /// Vectorized maximum.
@@ -371,13 +373,15 @@ fn copysign_simd(fx: &mut FunctionCx<'_, '_>, mag: Value, sig: Value) -> Value {
     .ins()
     .iconst(types::I32, i64::from(0x8000_0000_u32 as i32));
   let sign_mask = fx.bcx.ins().splat(types::I32X4, sign_mask);
-  let mag_bits = fx.bcx.ins().bitcast(types::I32X4, MemFlags::new(), mag);
-  let sig_bits = fx.bcx.ins().bitcast(types::I32X4, MemFlags::new(), sig);
+  let mag_bits = fx.bcx.ins().bitcast(types::I32X4, MemFlagsData::new(), mag);
+  let sig_bits = fx.bcx.ins().bitcast(types::I32X4, MemFlagsData::new(), sig);
   let not_sign_mask = fx.bcx.ins().bnot(sign_mask);
   let mag_abs = fx.bcx.ins().band(mag_bits, not_sign_mask);
   let sig_sign = fx.bcx.ins().band(sig_bits, sign_mask);
   let combined = fx.bcx.ins().bor(mag_abs, sig_sign);
-  fx.bcx.ins().bitcast(VEC_TYPE, MemFlags::new(), combined)
+  fx.bcx
+    .ins()
+    .bitcast(VEC_TYPE, MemFlagsData::new(), combined)
 }
 
 #[derive(Clone, Copy)]
@@ -397,7 +401,7 @@ fn sin_cos_simd(fx: &mut FunctionCx<'_, '_>, x: Value, mode: SinCos) -> Value {
   let vf32_from_bits = |fx: &mut FunctionCx<'_, '_>, bits: u32| -> Value {
     let scalar = fx.bcx.ins().iconst(types::I32, i64::from(bits));
     let splat = fx.bcx.ins().splat(types::I32X4, scalar);
-    fx.bcx.ins().bitcast(VEC_TYPE, MemFlags::new(), splat)
+    fx.bcx.ins().bitcast(VEC_TYPE, MemFlagsData::new(), splat)
   };
   let vi32_from_bits = |fx: &mut FunctionCx<'_, '_>, bits: u32| -> Value {
     let scalar = fx.bcx.ins().iconst(types::I32, i64::from(bits));
@@ -423,14 +427,14 @@ fn sin_cos_simd(fx: &mut FunctionCx<'_, '_>, x: Value, mode: SinCos) -> Value {
 
   let sign = match mode {
     SinCos::Sin => {
-      let x_bits = fx.bcx.ins().bitcast(types::I32X4, MemFlags::new(), x);
+      let x_bits = fx.bcx.ins().bitcast(types::I32X4, MemFlagsData::new(), x);
       let not_absmask = fx.bcx.ins().bnot(absmask);
       let input_sign = fx.bcx.ins().band(x_bits, not_absmask);
       fx.bcx.ins().bxor(input_sign, odd_n_sign)
     }
     SinCos::Cos => odd_n_sign,
     SinCos::Tan => {
-      let x_bits = fx.bcx.ins().bitcast(types::I32X4, MemFlags::new(), x);
+      let x_bits = fx.bcx.ins().bitcast(types::I32X4, MemFlagsData::new(), x);
       let not_absmask = fx.bcx.ins().bnot(absmask);
       fx.bcx.ins().band(x_bits, not_absmask)
     }
@@ -488,9 +492,12 @@ fn sin_cos_simd(fx: &mut FunctionCx<'_, '_>, x: Value, mode: SinCos) -> Value {
   };
 
   // Apply the accumulated sign bit.
-  let result_bits = fx.bcx.ins().bitcast(types::I32X4, MemFlags::new(), result);
+  let result_bits = fx
+    .bcx
+    .ins()
+    .bitcast(types::I32X4, MemFlagsData::new(), result);
   let signed = fx.bcx.ins().bxor(sign, result_bits);
-  fx.bcx.ins().bitcast(VEC_TYPE, MemFlags::new(), signed)
+  fx.bcx.ins().bitcast(VEC_TYPE, MemFlagsData::new(), signed)
 }
 
 /// Vectorized minimax-polynomial approximation of `exp(x)` over F32X4.
@@ -546,7 +553,7 @@ fn exp_simd(fx: &mut FunctionCx<'_, '_>, x: Value) -> Value {
   let bias_splat = fx.bcx.ins().splat(types::I32X4, bias);
   let biased = fx.bcx.ins().iadd(q, bias_splat);
   let emm0 = fx.bcx.ins().ishl_imm(biased, 23);
-  let scale = fx.bcx.ins().bitcast(VEC_TYPE, MemFlags::new(), emm0);
+  let scale = fx.bcx.ins().bitcast(VEC_TYPE, MemFlagsData::new(), emm0);
   let r = fx.bcx.ins().fmul(y, scale);
 
   let over_thresh = splat_f32(fx, 104.0);
@@ -584,7 +591,7 @@ fn log_simd(fx: &mut FunctionCx<'_, '_>, x: Value) -> Value {
   let d_scaled_bits = fx
     .bcx
     .ins()
-    .bitcast(types::I32X4, MemFlags::new(), d_scaled);
+    .bitcast(types::I32X4, MemFlagsData::new(), d_scaled);
   let exp_mask = fx.bcx.ins().iconst(types::I32, 0xff);
   let exp_mask_splat = fx.bcx.ins().splat(types::I32X4, exp_mask);
   let biased_exp = fx.bcx.ins().ushr_imm(d_scaled_bits, 23);
@@ -599,10 +606,10 @@ fn log_simd(fx: &mut FunctionCx<'_, '_>, x: Value) -> Value {
   let e_int = fx.bcx.ins().bitselect(is_subnormal, e_adj, e_int);
   let e = fx.bcx.ins().fcvt_from_sint(VEC_TYPE, e_int);
 
-  let d_bits = fx.bcx.ins().bitcast(types::I32X4, MemFlags::new(), d);
+  let d_bits = fx.bcx.ins().bitcast(types::I32X4, MemFlagsData::new(), d);
   let e_shifted = fx.bcx.ins().ishl_imm(e_int, 23);
   let m_bits = fx.bcx.ins().isub(d_bits, e_shifted);
-  let m = fx.bcx.ins().bitcast(VEC_TYPE, MemFlags::new(), m_bits);
+  let m = fx.bcx.ins().bitcast(VEC_TYPE, MemFlagsData::new(), m_bits);
 
   let m_minus_1 = fx.bcx.ins().fsub(m, one);
   let m_plus_1 = fx.bcx.ins().fadd(m, one);
@@ -1046,7 +1053,7 @@ fn apply_shuffle(fx: &mut FunctionCx<'_, '_>, raw: Value, lane_mask: [u8; 4]) ->
     .dfg
     .immediates
     .push(ConstantData::from(bytes.as_slice()));
-  let byte_flags = MemFlags::new().with_endianness(Endianness::Little);
+  let byte_flags = MemFlagsData::new().with_endianness(Endianness::Little);
   let raw_i8 = fx.bcx.ins().bitcast(types::I8X16, byte_flags, raw);
   let shuffled_i8 = fx.bcx.ins().shuffle(raw_i8, raw_i8, imm);
   fx.bcx.ins().bitcast(VEC_TYPE, byte_flags, shuffled_i8)

@@ -27,8 +27,9 @@ use crate::translate_simd::{
   translate_expr_simd,
 };
 
-pub(crate) const SRC_MEMFLAGS: MemFlags = MemFlags::trusted().with_readonly().with_can_move();
-const FRAME_PROP_MEMFLAGS: MemFlags = MemFlags::trusted().with_readonly().with_can_move();
+pub(crate) const SRC_MEMFLAGS: MemFlagsData =
+  MemFlagsData::trusted().with_readonly().with_can_move();
+const FRAME_PROP_MEMFLAGS: MemFlagsData = MemFlagsData::trusted().with_readonly().with_can_move();
 
 pub(crate) struct FunctionCx<'m, 'clif> {
   pub(crate) module: &'m mut dyn Module,
