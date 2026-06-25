@@ -1,6 +1,7 @@
 use std::f32::consts::{FRAC_PI_2, LN_2, LOG2_E, PI};
 use std::ptr::NonNull;
 
+use cranelift::codegen::ir::immediates::Offset32;
 use cranelift::codegen::ir::{ConstantData, Endianness};
 use cranelift::prelude::*;
 use cranexpr_ast::{BinOp, BoundaryMode, Expr, TernaryOp, UnOp};
@@ -9,7 +10,6 @@ use crate::compiler::{FunctionCx, SRC_MEMFLAGS};
 use crate::component_type::ComponentType;
 use crate::errors::CodegenError;
 use crate::pointer::Pointer;
-use crate::translate::{codegen_boundary_mode, codegen_pixel_offset, resolve_clip_name};
 
 const VEC_TYPE: types::Type = types::F32X4;
 
@@ -1129,5 +1129,122 @@ fn load_scalar_as_f32(
   match src_type {
     ComponentType::U8 | ComponentType::U16 => fx.bcx.ins().fcvt_from_uint(types::F32, val),
     ComponentType::F32 => val,
+  }
+}
+
+/// Computes the byte offset for a pixel at (x, y).
+pub(crate) fn codegen_pixel_offset(
+  fx: &mut FunctionCx<'_, '_>,
+  clip_idx: usize,
+  x: Value,
+  y: Value,
+  src_type: ComponentType,
+) -> (Pointer, Value) {
+  // Load source pointer for this clip.
+  let pointer_size = fx.pointer_type.bytes() as i32;
+  let src_ptr_val = fx
+    .src_clips
+    .offset(fx, Offset32::new(clip_idx as i32 * pointer_size))
+    .load(fx, fx.pointer_type, SRC_MEMFLAGS);
+  let src_ptr = Pointer::new(src_ptr_val);
+
+  // Load stride for this clip.
+  let src_stride = fx
+    .src_strides
+    .offset(fx, Offset32::new(clip_idx as i32 * 8))
+    .load(fx, types::I64, SRC_MEMFLAGS);
+
+  // pixel_offset = y * stride + x * bytes_per_sample
+  let row_offset = fx.bcx.ins().imul(y, src_stride);
+  let col_offset = fx.bcx.ins().imul_imm(x, src_type.bytes() as i64);
+  let pixel_offset = fx.bcx.ins().iadd(row_offset, col_offset);
+
+  (src_ptr, pixel_offset)
+}
+
+/// Resolves a clip name (e.g., "x", "y", "src0") to a clip index.
+pub(crate) fn resolve_clip_name(
+  clip: &str,
+  src_types: &[ComponentType],
+) -> Result<usize, CodegenError> {
+  // Check if it's a shorthand (x, y, z, a, b, ...)
+  if clip.len() == 1 {
+    let ch = clip.chars().next().unwrap();
+    if ('x'..='z').contains(&ch) {
+      let idx = (ch as u8 - b'x') as usize;
+      if idx < src_types.len() {
+        return Ok(idx);
+      }
+    } else if ch.is_ascii_lowercase() {
+      let idx = (ch as u8 - b'a' + 3) as usize;
+      if idx < src_types.len() {
+        return Ok(idx);
+      }
+    }
+  }
+
+  // Check if it's srcN format
+  if let Some(stripped) = clip.strip_prefix("src")
+    && let Ok(idx) = stripped.parse::<usize>()
+    && idx < src_types.len()
+  {
+    return Ok(idx);
+  }
+
+  Err(CodegenError::UndefinedVariable(clip.to_string()))
+}
+
+/// Applies boundary mode to a coordinate value.
+pub(crate) fn codegen_boundary_mode(
+  fx: &mut FunctionCx<'_, '_>,
+  coord: Value,
+  max: Value,
+  mode: BoundaryMode,
+) -> Value {
+  let zero = fx.bcx.ins().iconst(types::I64, 0);
+  let one = fx.bcx.ins().iconst(types::I64, 1);
+
+  match mode {
+    // Clamp: clamp(coord, 0, max - 1)
+    BoundaryMode::Clamp => {
+      let max_minus_one = fx.bcx.ins().isub(max, one);
+
+      // First clamp to max-1
+      let is_too_large = fx
+        .bcx
+        .ins()
+        .icmp(IntCC::SignedGreaterThan, coord, max_minus_one);
+      let clamped_max = fx.bcx.ins().select(is_too_large, max_minus_one, coord);
+
+      // Then clamp to 0
+      let is_too_small = fx.bcx.ins().icmp(IntCC::SignedLessThan, clamped_max, zero);
+      fx.bcx.ins().select(is_too_small, zero, clamped_max)
+    }
+
+    // Mirror: reflect at edges
+    // If coord < 0: mirror = -coord - 1
+    // If coord >= max: mirror = 2 * max - coord - 1
+    // Else: mirror = coord
+    BoundaryMode::Mirror => {
+      let is_negative = fx.bcx.ins().icmp(IntCC::SignedLessThan, coord, zero);
+      let is_too_large = fx
+        .bcx
+        .ins()
+        .icmp(IntCC::SignedGreaterThanOrEqual, coord, max);
+
+      // Calculate negative mirror: -coord - 1
+      let neg_mirror = fx.bcx.ins().isub(zero, coord);
+      let neg_mirror = fx.bcx.ins().isub(neg_mirror, one);
+
+      // Calculate positive mirror: 2 * max - coord - 1
+      let two = fx.bcx.ins().iconst(types::I64, 2);
+      let two_max = fx.bcx.ins().imul(max, two);
+      let pos_mirror = fx.bcx.ins().isub(two_max, coord);
+      let pos_mirror = fx.bcx.ins().isub(pos_mirror, one);
+
+      // Select based on conditions: first handle negative, then too large
+      let result = fx.bcx.ins().select(is_negative, neg_mirror, coord);
+      fx.bcx.ins().select(is_too_large, pos_mirror, result)
+    }
   }
 }
