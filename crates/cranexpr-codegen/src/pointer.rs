@@ -16,7 +16,6 @@ impl Pointer {
     }
   }
 
-  #[allow(dead_code)]
   pub(crate) fn get_addr(self, fx: &mut FunctionCx<'_, '_>) -> Value {
     let offset: i64 = self.offset.into();
     if offset == 0 {
