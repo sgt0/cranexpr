@@ -43,7 +43,6 @@ pub(crate) struct FunctionCx<'m, 'clif> {
 
   #[allow(dead_code)]
   pub(crate) dst_type: ComponentType,
-  #[allow(dead_code)]
   pub(crate) src_types: Vec<ComponentType>,
 
   pub(crate) boundary_mode: BoundaryMode,
