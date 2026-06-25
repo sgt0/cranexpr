@@ -8,7 +8,7 @@ mod pointer;
 mod translate;
 mod translate_simd;
 
-pub use compiler::{compile_clif, compile_jit, compile_jit_select};
+pub use compiler::{compile_clif, compile_disasm, compile_jit, compile_jit_select};
 
 type MainFunc =
   unsafe extern "C" fn(*mut u8, i64, *const *const u8, *const i64, i64, i64, i64, *const f32);
