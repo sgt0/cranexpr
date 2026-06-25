@@ -61,12 +61,12 @@ impl Pointer {
   }
 
   /// Load from memory at this pointer.
-  pub(crate) fn load(self, fx: &mut FunctionCx<'_, '_>, ty: Type, flags: MemFlags) -> Value {
+  pub(crate) fn load(self, fx: &mut FunctionCx<'_, '_>, ty: Type, flags: MemFlagsData) -> Value {
     fx.bcx.ins().load(ty, flags, self.base, self.offset)
   }
 
   /// Store `value` to memory at this pointer.
-  pub(crate) fn store(self, fx: &mut FunctionCx<'_, '_>, value: Value, flags: MemFlags) {
+  pub(crate) fn store(self, fx: &mut FunctionCx<'_, '_>, value: Value, flags: MemFlagsData) {
     fx.bcx.ins().store(flags, value, self.base, self.offset);
   }
 }
