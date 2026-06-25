@@ -21,10 +21,9 @@ use crate::comment_writer::CommentWriter;
 use crate::component_type::ComponentType;
 use crate::errors::{CodegenError, CodegenResult};
 use crate::pointer::Pointer;
-use crate::translate::codegen_pixel_offset;
 use crate::translate_simd::{
-  SIMD_LANES, load_pixel_vec_f32x4, simd_lane_offsets_f32x4, store_pixel_vec_f32x4,
-  translate_expr_simd,
+  SIMD_LANES, codegen_pixel_offset, load_pixel_vec_f32x4, simd_lane_offsets_f32x4,
+  store_pixel_vec_f32x4, translate_expr_simd,
 };
 
 pub(crate) const SRC_MEMFLAGS: MemFlagsData =
@@ -32,6 +31,7 @@ pub(crate) const SRC_MEMFLAGS: MemFlagsData =
 const FRAME_PROP_MEMFLAGS: MemFlagsData = MemFlagsData::trusted().with_readonly().with_can_move();
 
 pub(crate) struct FunctionCx<'m, 'clif> {
+  #[allow(dead_code)]
   pub(crate) module: &'m mut dyn Module,
   pub(crate) pointer_type: Type,
 

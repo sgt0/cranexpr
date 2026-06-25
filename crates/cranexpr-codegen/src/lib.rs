@@ -4,8 +4,6 @@ pub mod errors;
 
 mod compiler;
 mod pointer;
-#[allow(dead_code)]
-mod translate;
 mod translate_simd;
 
 pub use compiler::{compile_clif, compile_disasm, compile_jit, compile_jit_select};
