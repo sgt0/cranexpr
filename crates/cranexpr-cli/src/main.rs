@@ -2,11 +2,11 @@ use std::process::ExitCode;
 
 use clap::Parser;
 use cranexpr_ast::BoundaryMode;
-use cranexpr_codegen::compile_clif;
 use cranexpr_codegen::component_type::ComponentType;
+use cranexpr_codegen::{compile_clif, compile_disasm};
 use cranexpr_transforms::{PropVisitor, Visitor};
 
-/// Compile an expr and output Cranelift IR.
+/// Compile an expr and output Cranelift IR or native disassembly.
 #[derive(Parser)]
 #[command(version)]
 struct Args {
@@ -20,6 +20,10 @@ struct Args {
   /// Destination component type.
   #[arg(long, default_value = "f32")]
   dst_type: String,
+
+  /// Dump the native machine-code disassembly instead of Cranelift IR.
+  #[arg(long)]
+  disasm: bool,
 }
 
 fn parse_component_type(s: &str) -> Option<ComponentType> {
@@ -57,15 +61,21 @@ fn main() -> ExitCode {
   }
   let required_props: Vec<(usize, String)> = visitor.props.into_iter().collect();
 
-  match compile_clif(
+  let compile = if args.disasm {
+    compile_disasm
+  } else {
+    compile_clif
+  };
+
+  match compile(
     &ast,
     dst_type,
     &[src_type],
     Some(BoundaryMode::Clamp),
     &required_props,
   ) {
-    Ok(clif) => {
-      print!("{clif}");
+    Ok(output) => {
+      print!("{output}");
       ExitCode::SUCCESS
     }
     Err(err) => {

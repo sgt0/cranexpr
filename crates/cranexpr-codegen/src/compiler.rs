@@ -169,6 +169,47 @@ pub fn compile_clif(
   Ok(output)
 }
 
+/// Compiles an expression AST and returns the native disassembly of the
+/// generated machine code.
+///
+/// # Errors
+///
+/// Returns a [`CodegenError`] if the expression cannot be compiled.
+pub fn compile_disasm(
+  ast: &[Expr],
+  dst_type: ComponentType,
+  src_types: &[ComponentType],
+  boundary_mode: Option<BoundaryMode>,
+  required_frame_props: &[(usize, String)],
+) -> Result<String, CodegenError> {
+  let ast: Vec<Expr> = ast.iter().map(simplify).collect();
+  let mut jit_module = create_jit_module();
+  let mut built = build_entry_fn(
+    &mut jit_module,
+    &ast,
+    dst_type,
+    src_types,
+    boundary_mode,
+    required_frame_props,
+  )?;
+
+  built.ctx.set_disasm(true);
+  if let Err(err) = jit_module.define_function(built.func_id, &mut built.ctx) {
+    let err_msg = match err {
+      ModuleError::Compilation(source) => pretty_error(&built.ctx.func, source),
+      _ => err.to_string(),
+    };
+    return Err(CodegenError::CompilationError(err_msg));
+  }
+
+  let disasm = built
+    .ctx
+    .compiled_code()
+    .and_then(|code| code.vcode.as_deref())
+    .ok_or_else(|| CodegenError::CompilationError("disassembly unavailable".to_string()))?;
+  Ok(disasm.to_string())
+}
+
 /// Compiles an expression AST into a JIT-compiled function that evaluates the
 /// expression once.
 ///
