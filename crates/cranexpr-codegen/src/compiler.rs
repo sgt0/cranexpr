@@ -1421,6 +1421,140 @@ mod tests {
     assert_eq!(actual[0], 2);
   }
 
+  /// Runs `expr` with an `F16` source plane (given as raw bit patterns) into
+  /// an `F32` destination plane.
+  fn run_f16_src_to_f32(
+    expr: &str,
+    halfbits: &[u16],
+    width: usize,
+    height: usize,
+    boundary: Option<BoundaryMode>,
+  ) -> Vec<f32> {
+    let ast = cranexpr_parser::parse_expr(expr).unwrap();
+    let compiled = compile_jit(
+      &ast,
+      ComponentType::F32,
+      &[ComponentType::F16],
+      boundary,
+      &[],
+    )
+    .expect("should compile expr");
+
+    let (mut src_buf, src_stride) = alloc_aligned_plane(width * size_of::<u16>(), height);
+    fill_plane(src_buf.as_mut_slice(), src_stride, halfbits, width, height);
+    let (mut dst_buf, dst_stride) = alloc_aligned_plane(width * size_of::<f32>(), height);
+
+    let src_ptrs = [src_buf.as_ptr()];
+    let src_strides = [src_stride as i64];
+    unsafe {
+      compiled.invoke(
+        dst_buf.as_mut_slice(),
+        dst_stride as i64,
+        &src_ptrs,
+        &src_strides,
+        width as i32,
+        height as i32,
+        0,
+        &[],
+      );
+    }
+    unpack_plane::<f32>(dst_buf.as_slice(), dst_stride, width, height)
+  }
+
+  /// Runs `expr` with an `F32` source plane into an `F16` destination plane,
+  /// returning the raw `f16` bit patterns.
+  fn run_f32_src_to_f16(expr: &str, inputs: &[f32], width: usize, height: usize) -> Vec<u16> {
+    let ast = cranexpr_parser::parse_expr(expr).unwrap();
+    let compiled = compile_jit(&ast, ComponentType::F16, &[ComponentType::F32], None, &[])
+      .expect("should compile expr");
+
+    let (mut src_buf, src_stride) = alloc_aligned_plane(width * size_of::<f32>(), height);
+    fill_plane(src_buf.as_mut_slice(), src_stride, inputs, width, height);
+    let (mut dst_buf, dst_stride) = alloc_aligned_plane(width * size_of::<u16>(), height);
+
+    let src_ptrs = [src_buf.as_ptr()];
+    let src_strides = [src_stride as i64];
+    unsafe {
+      compiled.invoke(
+        dst_buf.as_mut_slice(),
+        dst_stride as i64,
+        &src_ptrs,
+        &src_strides,
+        width as i32,
+        height as i32,
+        0,
+        &[],
+      );
+    }
+    unpack_plane::<u16>(dst_buf.as_slice(), dst_stride, width, height)
+  }
+
+  #[rstest]
+  fn test_f16_load_to_f32() {
+    // Zero, +1, +0.5, +2, -1, +10, ~1/3, smallest subnormal.
+    let halfbits = [
+      0x0000, 0x3c00, 0x3800, 0x4000, 0xbc00, 0x4900, 0x3555, 0x0001,
+    ];
+    let expected: [f32; 8] = [0.0, 1.0, 0.5, 2.0, -1.0, 10.0, 0.333_251_95, 5.960_464_5e-8];
+    let out = run_f16_src_to_f32("x", &halfbits, halfbits.len(), 1, None);
+    for (i, (&a, &e)) in out.iter().zip(expected.iter()).enumerate() {
+      assert_eq!(a.to_bits(), e.to_bits(), "lane {i}: got {a}, want {e}");
+    }
+  }
+
+  #[rstest]
+  fn test_f16_store_from_f32() {
+    let inputs = [0.0, 1.0, 0.5, 2.0, -1.0, 10.0, 0.333_333_3, 1.337];
+    // Round-to-nearest-even f16 bit patterns of the inputs.
+    let expected = [
+      0x0000, 0x3c00, 0x3800, 0x4000, 0xbc00, 0x4900, 0x3555, 0x3d59,
+    ];
+    let out = run_f32_src_to_f16("x", &inputs, inputs.len(), 1);
+    assert_eq!(out, expected);
+  }
+
+  #[rstest]
+  fn test_f16_roundtrip_arith() {
+    // load -> multiply -> store, all through f16.
+    let ast = cranexpr_parser::parse_expr("x 2 *").unwrap();
+    let compiled = compile_jit(&ast, ComponentType::F16, &[ComponentType::F16], None, &[])
+      .expect("should compile expr");
+
+    // 1, 0.5, -3, 7 as f16 bit patterns.
+    let halfbits = [0x3c00u16, 0x3800, 0xc200, 0x4700];
+    let width = halfbits.len();
+    let (mut src_buf, src_stride) = alloc_aligned_plane(width * size_of::<u16>(), 1);
+    fill_plane(src_buf.as_mut_slice(), src_stride, &halfbits, width, 1);
+    let (mut dst_buf, dst_stride) = alloc_aligned_plane(width * size_of::<u16>(), 1);
+
+    let src_ptrs = [src_buf.as_ptr()];
+    let src_strides = [src_stride as i64];
+    unsafe {
+      compiled.invoke(
+        dst_buf.as_mut_slice(),
+        dst_stride as i64,
+        &src_ptrs,
+        &src_strides,
+        width as i32,
+        1,
+        0,
+        &[],
+      );
+    }
+    let out = unpack_plane::<u16>(dst_buf.as_slice(), dst_stride, width, 1);
+    // 2, 1, -6, 14 as f16 bit patterns.
+    assert_eq!(out, [0x4000, 0x3c00, 0xc600, 0x4b00]);
+  }
+
+  #[rstest]
+  fn test_f16_scalar_load_via_mirror() {
+    let halfbits = [0x4900u16; 8]; // all 10.0
+    let out = run_f16_src_to_f32("x[-2,0]", &halfbits, 8, 1, Some(BoundaryMode::Mirror));
+    for (i, &v) in out.iter().enumerate() {
+      assert_eq!(v.to_bits(), 10.0_f32.to_bits(), "lane {i}");
+    }
+  }
+
   #[rstest]
   #[case("1 1 and", 1.0)]
   #[case("1 0 and", 0.0)]

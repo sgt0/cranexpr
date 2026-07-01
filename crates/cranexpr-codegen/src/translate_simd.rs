@@ -27,6 +27,11 @@ pub(crate) fn load_pixel_vec_f32x4(
 ) -> Value {
   let ptr = src_ptr.offset_value(fx, offset);
   match src_type {
+    ComponentType::F16 => {
+      let addr = ptr.get_addr(fx);
+      let halfbits = fx.bcx.ins().uload16x4(SRC_MEMFLAGS, addr, 0);
+      half_to_float_simd(fx, halfbits)
+    }
     ComponentType::F32 => {
       let flags = if aligned {
         SRC_MEMFLAGS.with_aligned()
@@ -60,6 +65,15 @@ pub(crate) fn store_pixel_vec_f32x4(
 ) {
   let ptr = dest_ptr.offset_value(fx, offset);
   match dst_type {
+    ComponentType::F16 => {
+      let halfbits = float_to_half_simd(fx, value);
+      // Narrow the 16-bit half patterns down to I16X8.
+      let narrowed = fx.bcx.ins().unarrow(halfbits, halfbits);
+      let byte_flags = MemFlagsData::new().with_endianness(Endianness::Little);
+      let as_i64x2 = fx.bcx.ins().bitcast(types::I64X2, byte_flags, narrowed);
+      let low = fx.bcx.ins().extractlane(as_i64x2, 0);
+      ptr.store(fx, low, MemFlagsData::trusted());
+    }
     ComponentType::F32 => {
       // VapourSynth guarantees row strides are aligned to at least 32 bytes.
       ptr.store(fx, value, MemFlagsData::trusted().with_aligned());
@@ -92,7 +106,7 @@ pub(crate) fn store_pixel_vec_f32x4(
           let low = fx.bcx.ins().extractlane(as_i32x4, 0);
           ptr.store(fx, low, MemFlagsData::trusted());
         }
-        ComponentType::F32 => unreachable!(),
+        ComponentType::F16 | ComponentType::F32 => unreachable!(),
       }
     }
   }
@@ -302,6 +316,124 @@ fn translate_expr_simd_inner(
 fn splat_f32(fx: &mut FunctionCx<'_, '_>, val: f32) -> Value {
   let scalar = fx.bcx.ins().f32const(val);
   fx.bcx.ins().splat(VEC_TYPE, scalar)
+}
+
+/// Splats an `i32` constant across an `I32X4` vector.
+fn splat_i32(fx: &mut FunctionCx<'_, '_>, val: i64) -> Value {
+  let scalar = fx.bcx.ins().iconst(types::I32, val);
+  fx.bcx.ins().splat(types::I32X4, scalar)
+}
+
+/// Converts an `I32X4` of zero-extended IEEE-754 binary16 bit patterns into an
+/// `F32X4`.
+///
+/// Based on <https://gist.github.com/rygorous/2156668>
+fn half_to_float_simd(fx: &mut FunctionCx<'_, '_>, h: Value) -> Value {
+  let no_flags = MemFlagsData::new();
+
+  let mant_exp_mask = splat_i32(fx, 0x7fff);
+  let mant_exp = fx.bcx.ins().band(h, mant_exp_mask);
+  let shifted = fx.bcx.ins().ishl_imm(mant_exp, 13);
+  let as_f = fx.bcx.ins().bitcast(VEC_TYPE, no_flags, shifted);
+
+  let magic = splat_f32(fx, f32::from_bits(0x7780_0000));
+  let scaled = fx.bcx.ins().fmul(as_f, magic);
+
+  let was_infnan = splat_f32(fx, f32::from_bits(0x4780_0000));
+  let infnan_mask = fx
+    .bcx
+    .ins()
+    .fcmp(FloatCC::GreaterThanOrEqual, scaled, was_infnan);
+  let scaled_bits = fx.bcx.ins().bitcast(types::I32X4, no_flags, scaled);
+  let inf_exp = splat_i32(fx, 255 << 23);
+  let with_inf = fx.bcx.ins().bor(scaled_bits, inf_exp);
+  let merged = fx.bcx.ins().bitselect(infnan_mask, with_inf, scaled_bits);
+
+  let sign_mask = splat_i32(fx, 0x8000);
+  let sign = fx.bcx.ins().band(h, sign_mask);
+  let sign = fx.bcx.ins().ishl_imm(sign, 16);
+  let result = fx.bcx.ins().bor(merged, sign);
+  fx.bcx.ins().bitcast(VEC_TYPE, no_flags, result)
+}
+
+/// Converts an `F32X4` into an `I32X4` of IEEE-754 binary16 bit patterns, held
+/// in the low 16 bits of each lane.
+///
+/// Based on <https://gist.github.com/rygorous/2156668>
+fn float_to_half_simd(fx: &mut FunctionCx<'_, '_>, f: Value) -> Value {
+  let no_flags = MemFlagsData::new();
+  let f_bits = fx.bcx.ins().bitcast(types::I32X4, no_flags, f);
+
+  let sign_mask = splat_i32(fx, i64::from(0x8000_0000_u32 as i32));
+  let sign = fx.bcx.ins().band(f_bits, sign_mask);
+  let abs_mask = splat_i32(fx, 0x7fff_ffff);
+  let abs = fx.bcx.ins().band(f_bits, abs_mask);
+
+  // Inf/NaN: NaN -> 0x7e00, Inf -> 0x7c00.
+  let f16max = splat_i32(fx, 0x4780_0000);
+  let is_infnan = fx
+    .bcx
+    .ins()
+    .icmp(IntCC::UnsignedGreaterThanOrEqual, abs, f16max);
+  let f32infty = splat_i32(fx, 0x7f80_0000);
+  let is_nan = fx.bcx.ins().icmp(IntCC::UnsignedGreaterThan, abs, f32infty);
+  let qnan = splat_i32(fx, 0x7e00);
+  let inf = splat_i32(fx, 0x7c00);
+  let infnan_o = fx.bcx.ins().bitselect(is_nan, qnan, inf);
+
+  // Subnormal/zero: align the mantissa with a magic add, then subtract bias.
+  let sub_thresh = splat_i32(fx, 113 << 23);
+  let is_subnormal = fx.bcx.ins().icmp(IntCC::UnsignedLessThan, abs, sub_thresh);
+  let abs_f = fx.bcx.ins().bitcast(VEC_TYPE, no_flags, abs);
+  let denorm_magic = splat_f32(fx, f32::from_bits(0x3f00_0000));
+  let sub_f = fx.bcx.ins().fadd(abs_f, denorm_magic);
+  let sub_bits = fx.bcx.ins().bitcast(types::I32X4, no_flags, sub_f);
+  let denorm_magic_bits = splat_i32(fx, 0x3f00_0000);
+  let sub_o = fx.bcx.ins().isub(sub_bits, denorm_magic_bits);
+
+  // Normalized: bias the exponent and round to nearest even.
+  let shifted13 = fx.bcx.ins().ushr_imm(abs, 13);
+  let one = splat_i32(fx, 1);
+  let mant_odd = fx.bcx.ins().band(shifted13, one);
+  let bias = splat_i32(fx, i64::from(0xc800_0fff_u32 as i32));
+  let norm = fx.bcx.ins().iadd(abs, bias);
+  let norm = fx.bcx.ins().iadd(norm, mant_odd);
+  let norm_o = fx.bcx.ins().ushr_imm(norm, 13);
+
+  let o = fx.bcx.ins().bitselect(is_subnormal, sub_o, norm_o);
+  let o = fx.bcx.ins().bitselect(is_infnan, infnan_o, o);
+  let sign_h = fx.bcx.ins().ushr_imm(sign, 16);
+  fx.bcx.ins().bor(o, sign_h)
+}
+
+/// Scalar counterpart of [`half_to_float_simd`]: converts a zero-extended
+/// `I32` binary16 bit pattern into an `F32`.
+fn half_to_float_scalar(fx: &mut FunctionCx<'_, '_>, h: Value) -> Value {
+  let no_flags = MemFlagsData::new();
+
+  let mant_exp_mask = fx.bcx.ins().iconst(types::I32, 0x7fff);
+  let mant_exp = fx.bcx.ins().band(h, mant_exp_mask);
+  let shifted = fx.bcx.ins().ishl_imm(mant_exp, 13);
+  let as_f = fx.bcx.ins().bitcast(types::F32, no_flags, shifted);
+
+  let magic = fx.bcx.ins().f32const(f32::from_bits(0x7780_0000));
+  let scaled = fx.bcx.ins().fmul(as_f, magic);
+
+  let was_infnan = fx.bcx.ins().f32const(f32::from_bits(0x4780_0000));
+  let infnan = fx
+    .bcx
+    .ins()
+    .fcmp(FloatCC::GreaterThanOrEqual, scaled, was_infnan);
+  let scaled_bits = fx.bcx.ins().bitcast(types::I32, no_flags, scaled);
+  let inf_exp = fx.bcx.ins().iconst(types::I32, 255 << 23);
+  let with_inf = fx.bcx.ins().bor(scaled_bits, inf_exp);
+  let merged = fx.bcx.ins().select(infnan, with_inf, scaled_bits);
+
+  let sign_mask = fx.bcx.ins().iconst(types::I32, 0x8000);
+  let sign = fx.bcx.ins().band(h, sign_mask);
+  let sign = fx.bcx.ins().ishl_imm(sign, 16);
+  let result = fx.bcx.ins().bor(merged, sign);
+  fx.bcx.ins().bitcast(types::F32, no_flags, result)
 }
 
 /// Per-lane x offsets used to synthesize the SIMD X coordinate vector.
@@ -1123,12 +1255,19 @@ fn load_scalar_as_f32(
   offset: Value,
   src_type: ComponentType,
 ) -> Value {
-  let val = src_ptr
-    .offset_value(fx, offset)
-    .load(fx, src_type.into(), SRC_MEMFLAGS);
+  let ptr = src_ptr.offset_value(fx, offset);
   match src_type {
-    ComponentType::U8 | ComponentType::U16 => fx.bcx.ins().fcvt_from_uint(types::F32, val),
-    ComponentType::F32 => val,
+    ComponentType::F16 => {
+      // Load the raw f16 bits as an integer and convert via bit twiddling.
+      let halfbits = ptr.load(fx, types::I16, SRC_MEMFLAGS);
+      let halfbits = fx.bcx.ins().uextend(types::I32, halfbits);
+      half_to_float_scalar(fx, halfbits)
+    }
+    ComponentType::U8 | ComponentType::U16 => {
+      let val = ptr.load(fx, src_type.into(), SRC_MEMFLAGS);
+      fx.bcx.ins().fcvt_from_uint(types::F32, val)
+    }
+    ComponentType::F32 => ptr.load(fx, types::F32, SRC_MEMFLAGS),
   }
 }
 

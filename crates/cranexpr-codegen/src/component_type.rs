@@ -4,6 +4,7 @@ use cranelift::prelude::*;
 pub enum ComponentType {
   U8,
   U16,
+  F16,
   F32,
 }
 
@@ -12,7 +13,7 @@ impl ComponentType {
   pub const fn bytes(self) -> usize {
     match self {
       Self::U8 => 1,
-      Self::U16 => 2,
+      Self::U16 | Self::F16 => 2,
       Self::F32 => 4,
     }
   }
@@ -22,7 +23,7 @@ impl ComponentType {
     match self {
       Self::U8 => 255.0,
       Self::U16 => 65535.0,
-      Self::F32 => 1.0,
+      Self::F16 | Self::F32 => 1.0,
     }
   }
 }
@@ -32,6 +33,7 @@ impl From<ComponentType> for types::Type {
     match value {
       ComponentType::U8 => types::I8,
       ComponentType::U16 => types::I16,
+      ComponentType::F16 => types::F16,
       ComponentType::F32 => types::F32,
     }
   }
