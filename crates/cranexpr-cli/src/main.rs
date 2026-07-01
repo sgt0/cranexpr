@@ -29,6 +29,7 @@ struct Args {
 fn parse_component_type(s: &str) -> Option<ComponentType> {
   match s {
     "f32" => Some(ComponentType::F32),
+    "f16" => Some(ComponentType::F16),
     "u8" => Some(ComponentType::U8),
     "u16" => Some(ComponentType::U16),
     _ => None,

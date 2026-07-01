@@ -16,7 +16,11 @@ impl FromVideoFormat for ComponentType {
         2 => Self::U16,
         _ => unreachable!(),
       },
-      SampleType::Float => Self::F32,
+      SampleType::Float => match format.video_format().bytes_per_sample {
+        2 => Self::F16,
+        4 => Self::F32,
+        _ => unreachable!(),
+      },
     }
   }
 }

@@ -318,17 +318,32 @@ impl Filter for CranexprFilter {
               },
               _ => unreachable!(),
             },
-            SampleType::Float => unsafe {
-              expr.invoke(
-                dst.as_mut_slice::<f32>(plane_idx as i32),
-                dst_stride,
-                &src_ptrs,
-                &src_strides,
-                width,
-                height,
-                n,
-                &frame_props,
-              );
+            SampleType::Float => match self.vi.format.bytes_per_sample {
+              2 => unsafe {
+                expr.invoke(
+                  dst.as_mut_slice::<u16>(plane_idx as i32),
+                  dst_stride,
+                  &src_ptrs,
+                  &src_strides,
+                  width,
+                  height,
+                  n,
+                  &frame_props,
+                );
+              },
+              4 => unsafe {
+                expr.invoke(
+                  dst.as_mut_slice::<f32>(plane_idx as i32),
+                  dst_stride,
+                  &src_ptrs,
+                  &src_strides,
+                  width,
+                  height,
+                  n,
+                  &frame_props,
+                );
+              },
+              _ => unreachable!(),
             },
           }
         }
