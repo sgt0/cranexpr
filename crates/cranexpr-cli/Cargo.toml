@@ -8,7 +8,7 @@ name = "cranexpr"
 path = "src/main.rs"
 
 [dependencies]
-clap = { version = "=4.6.1", features = ["derive"] }
+clap = { version = "=4.6.2", features = ["derive"] }
 
 cranexpr-ast = { workspace = true }
 cranexpr-codegen = { workspace = true }
