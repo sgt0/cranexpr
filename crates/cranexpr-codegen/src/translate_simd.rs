@@ -771,7 +771,7 @@ fn log_simd(fx: &mut FunctionCx<'_, '_>, x: Value) -> Value {
 
 pub(crate) fn fpow_by_squaring(fx: &mut FunctionCx<'_, '_>, base: Value, exp: u32) -> Value {
   debug_assert!(exp >= 3);
-  let bits = u32::BITS - exp.leading_zeros();
+  let bits = exp.bit_width();
   let mut result = base;
   for i in (0..bits - 1).rev() {
     result = fx.bcx.ins().fmul(result, result);
