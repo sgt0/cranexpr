@@ -83,11 +83,18 @@ pub(crate) fn store_pixel_vec_f32x4(
       let peak = splat_f32(fx, dst_type.peak_value());
       let clamped = fmax_simd(fx, value, zero);
       let clamped = fmin_simd(fx, clamped, peak);
-      let rounded = fx.bcx.ins().nearest(clamped);
 
-      // `value` is now clamped to [0, peak], so a signed saturating conversion
-      // is identical to an unsigned one, but cheaper.
-      let i32x4 = fx.bcx.ins().fcvt_to_sint_sat(types::I32X4, rounded);
+      // `clamped` is within [0, 2^16), so adding 2^23 places each lane's
+      // integer value in the low mantissa bits. Masking them out is cheaper
+      // than doing `nearest` + `fcvt_to_sint_sat`.
+      let magic = splat_f32(fx, 2f32.powi(23));
+      let biased = fx.bcx.ins().fadd(clamped, magic);
+      let bits = fx
+        .bcx
+        .ins()
+        .bitcast(types::I32X4, MemFlagsData::new(), biased);
+      let mantissa_mask = splat_i32(fx, 0xFFFF);
+      let i32x4 = fx.bcx.ins().band(bits, mantissa_mask);
       let byte_flags = MemFlagsData::new().with_endianness(Endianness::Little);
       match dst_type {
         ComponentType::U16 => {
@@ -486,8 +493,9 @@ fn vselect_f32x4(
 fn fmax_simd(fx: &mut FunctionCx<'_, '_>, lhs: Value, rhs: Value) -> Value {
   // Benchmarked as faster than Cranelift's `fmax` since we shouldn't need its
   // full IEEE-754 semantics.
-  let cmp = fx.bcx.ins().fcmp(FloatCC::GreaterThan, lhs, rhs);
-  vselect_f32x4(fx, cmp, lhs, rhs)
+  let cmp = fx.bcx.ins().fcmp(FloatCC::LessThan, rhs, lhs);
+  let mask = fx.bcx.ins().bitcast(VEC_TYPE, MemFlagsData::new(), cmp);
+  fx.bcx.ins().bitselect(mask, lhs, rhs)
 }
 
 /// Vectorized minimum.
@@ -495,7 +503,8 @@ fn fmin_simd(fx: &mut FunctionCx<'_, '_>, lhs: Value, rhs: Value) -> Value {
   // Benchmarked as faster than Cranelift's `fmin` since we shouldn't need its
   // full IEEE-754 semantics.
   let cmp = fx.bcx.ins().fcmp(FloatCC::LessThan, lhs, rhs);
-  vselect_f32x4(fx, cmp, lhs, rhs)
+  let mask = fx.bcx.ins().bitcast(VEC_TYPE, MemFlagsData::new(), cmp);
+  fx.bcx.ins().bitselect(mask, lhs, rhs)
 }
 
 /// Returns a value with the magnitude of `mag` and the sign of `sig`.
