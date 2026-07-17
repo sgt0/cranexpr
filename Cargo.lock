@@ -481,6 +481,7 @@ name = "cranexpr-transforms"
 version = "0.11.0"
 dependencies = [
  "cranexpr-ast",
+ "cranexpr-parser",
  "miette",
  "thiserror",
 ]

@@ -15,11 +15,13 @@ use cranexpr_ast::{BoundaryMode, Expr};
 use cranexpr_transforms::simplify;
 use nanoid::nanoid;
 
+use crate::CompiledExpr;
 use crate::MainFunction;
 use crate::SelectFunction;
 use crate::comment_writer::CommentWriter;
 use crate::component_type::ComponentType;
 use crate::errors::{CodegenError, CodegenResult};
+use crate::lut::LutFunction;
 use crate::pointer::Pointer;
 use crate::translate_simd::{
   SIMD_LANES, codegen_pixel_offset, load_pixel_vec_f32x4, simd_lane_offsets_f32x4,
@@ -97,7 +99,11 @@ fn create_jit_module() -> JITModule {
   JITModule::new(jit_builder)
 }
 
-/// Compiles an expression AST into a JIT-compiled function.
+/// Compiles an expression AST while selecting the best evaluation strategy.
+///
+/// The general case is a JIT-compiled SIMD loop. When the expression is a
+/// pure function of a single integer clip's current pixel, it is instead
+/// precomputed into a lookup table.
 ///
 /// # Errors
 ///
@@ -112,7 +118,7 @@ pub fn compile_jit(
   src_types: &[ComponentType],
   boundary_mode: Option<BoundaryMode>,
   required_frame_props: &[(usize, String)],
-) -> Result<MainFunction, CodegenError> {
+) -> Result<CompiledExpr, CodegenError> {
   let ast: Vec<Expr> = ast.iter().map(simplify).collect();
   let mut jit_module = create_jit_module();
   let mut main_func = build_entry_fn(
@@ -135,7 +141,13 @@ pub fn compile_jit(
   jit_module.finalize_definitions().unwrap();
 
   let finalized_main = jit_module.get_finalized_function(main_func.func_id);
-  Ok(MainFunction::from_ptr(finalized_main))
+  let main = MainFunction::from_ptr(finalized_main);
+
+  if let Some(lut) = LutFunction::try_build(&ast, &main, dst_type, src_types, required_frame_props)
+  {
+    return Ok(CompiledExpr::Lut(lut));
+  }
+  Ok(CompiledExpr::Simd(main))
 }
 
 /// Compiles an expression AST and returns the pretty-printed Cranelift IR with

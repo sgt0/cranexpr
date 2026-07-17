@@ -1,14 +1,8 @@
 use cranexpr_ast::Expr;
 
 use crate::errors::TransformError;
+use crate::ident::is_clip_identifier;
 use crate::visit::{Visitor, walk_expr};
-
-fn is_clip_identifier(name: &str) -> bool {
-  matches!(name.as_bytes(), [b'a'..=b'z'])
-    || name
-      .strip_prefix("src")
-      .is_some_and(|s| s.parse::<usize>().is_ok())
-}
 
 fn is_pixel_context_identifier(name: &str) -> bool {
   matches!(name, "X" | "Y")
