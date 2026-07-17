@@ -18,7 +18,7 @@ use vapoursynth4_rs::{
   utils::is_constant_video_format,
 };
 
-use cranexpr_codegen::{MainFunction, compile_jit};
+use cranexpr_codegen::{CompiledExpr, compile_jit};
 
 use crate::{
   component_type::{ComponentType, FromVideoFormat},
@@ -37,7 +37,7 @@ pub(crate) struct CranexprFilter {
   nodes: Vec<VideoNode>,
   vi: VideoInfo,
   planes: [PlaneOp; 3],
-  bytecode: [Option<MainFunction>; 3],
+  bytecode: [Option<CompiledExpr>; 3],
   required_frame_props: [Vec<(usize, String)>; 3],
   frame_prop_keys: [Vec<Key>; 3],
 }
@@ -110,7 +110,7 @@ impl Filter for CranexprFilter {
     };
 
     let mut planes = [PlaneOp::Undefined; 3];
-    let mut bytecode: [Option<MainFunction>; 3] = [None, None, None];
+    let mut bytecode: [Option<CompiledExpr>; 3] = [None, None, None];
     let mut required_frame_props: [Vec<(usize, String)>; 3] = [Vec::new(), Vec::new(), Vec::new()];
     let mut frame_prop_keys: [Vec<Key>; 3] = [Vec::new(), Vec::new(), Vec::new()];
 

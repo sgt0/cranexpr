@@ -3,10 +3,12 @@ pub mod component_type;
 pub mod errors;
 
 mod compiler;
+mod lut;
 mod pointer;
 mod translate_simd;
 
 pub use compiler::{compile_clif, compile_disasm, compile_jit, compile_jit_select};
+pub use lut::LutFunction;
 
 type MainFunc =
   unsafe extern "C" fn(*mut u8, i64, *const *const u8, *const i64, i64, i64, i64, *const f32);
@@ -65,6 +67,54 @@ impl MainFunction {
         frame_props_ptr,
       );
     };
+  }
+}
+/// A compiled expression via some evaluation strategy.
+#[derive(Debug)]
+pub enum CompiledExpr {
+  /// JIT-compiled SIMD loop.
+  Simd(MainFunction),
+  /// Lookup table over the whole input domain.
+  Lut(LutFunction),
+}
+
+impl CompiledExpr {
+  /// Evaluates the expression over a plane.
+  ///
+  /// # Safety
+  ///
+  /// `dst`, `srcs`, and `frame_props` must be valid and match the types used
+  /// during compilation.
+  #[inline]
+  #[allow(clippy::too_many_arguments)]
+  pub unsafe fn invoke<D>(
+    &self,
+    dst: &mut [D],
+    dst_stride: i64,
+    srcs: &[*const u8],
+    src_strides: &[i64],
+    width: i32,
+    height: i32,
+    n: i32,
+    frame_props: &[f32],
+  ) {
+    match self {
+      Self::Simd(main) => unsafe {
+        main.invoke(
+          dst,
+          dst_stride,
+          srcs,
+          src_strides,
+          width,
+          height,
+          n,
+          frame_props,
+        );
+      },
+      Self::Lut(lut) => unsafe {
+        lut.invoke(dst, dst_stride, srcs, src_strides, width, height);
+      },
+    }
   }
 }
 

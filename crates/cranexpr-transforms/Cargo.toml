@@ -12,5 +12,8 @@ thiserror = "=2.0.18"
 
 cranexpr-ast = { workspace = true }
 
+[dev-dependencies]
+cranexpr-parser = { workspace = true }
+
 [lints]
 workspace = true
