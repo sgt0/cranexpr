@@ -9,7 +9,7 @@ doctest = false
 [dependencies]
 cranexpr-ast = { workspace = true }
 cranexpr-lexer = { workspace = true }
-thiserror = "=2.0.18"
+thiserror = "=2.0.19"
 
 [dev-dependencies]
 insta = { version = "=1.48.0", features = ["yaml"] }
