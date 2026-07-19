@@ -7,7 +7,7 @@ edition.workspace = true
 doctest = false
 
 [dependencies]
-serde = { version = "=1.0.228", features = ["derive"] }
+serde = { version = "=1.0.229", features = ["derive"] }
 
 [dev-dependencies]
 insta = { version = "=1.48.0", features = ["yaml"] }

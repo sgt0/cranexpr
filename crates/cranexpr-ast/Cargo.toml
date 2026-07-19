@@ -10,7 +10,7 @@ doctest = false
 [dependencies]
 num-derive = "=0.4.2"
 num-traits = "=0.2.19"
-serde = { version = "=1.0.228", features = ["derive", "rc"] }
+serde = { version = "=1.0.229", features = ["derive", "rc"] }
 strum = "=0.28.0"
 strum_macros = "=0.28.0"
 
