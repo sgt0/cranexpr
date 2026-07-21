@@ -418,7 +418,7 @@ dependencies = [
 name = "cranexpr-ast"
 version = "0.11.0"
 dependencies = [
- "num-derive",
+ "num-derive 0.5.1",
  "num-traits",
  "serde",
  "strum",
@@ -841,6 +841,17 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.119",
+]
+
+[[package]]
+name = "num-derive"
+version = "0.5.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e4e98dc3b890f6c23a0f9d3d491a2823d0dea0fa656302a13dd225fa924112a8"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 3.0.1",
 ]
 
 [[package]]
@@ -1318,7 +1329,7 @@ checksum = "239f8e4c421199a00692ab6bd3e1ee0dc0ebd28a17b577b69db86fd4510a99fe"
 dependencies = [
  "const-str",
  "miette",
- "num-derive",
+ "num-derive 0.4.2",
  "num-traits",
  "seq-macro",
  "strum",
