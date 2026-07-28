@@ -389,7 +389,7 @@ fn build_entry_fn(
         let expr_val = translate_expr_simd(fx, last_expr)?;
 
         let dest_row_offset = fx.bcx.ins().imul(y_coord, dst_stride);
-        let dest_col_offset = fx.bcx.ins().imul_imm(x_coord, dst_type.bytes() as i64);
+        let dest_col_offset = fx.bcx.ins().imul_imm_s(x_coord, dst_type.bytes() as i64);
         let dest_offset = fx.bcx.ins().iadd(dest_row_offset, dest_col_offset);
         store_pixel_vec_f32x4(fx, dest_ptr, dest_offset, expr_val, dst_type);
 
@@ -411,7 +411,8 @@ fn build_entry_fn(
 
     fx.bcx.ins().return_(&[]);
     fx.bcx.seal_all_blocks();
-    fx.bcx.finalize();
+    let frontend_config = fx.module.target_config();
+    fx.bcx.finalize(frontend_config);
     comments = fx.comments;
   }
 
@@ -520,7 +521,8 @@ fn build_select_fn(
     let scalar = fx.bcx.ins().extractlane(expr_val, 0);
     fx.bcx.ins().return_(&[scalar]);
     fx.bcx.seal_all_blocks();
-    fx.bcx.finalize();
+    let frontend_config = fx.module.target_config();
+    fx.bcx.finalize(frontend_config);
     comments = fx.comments;
   }
 
