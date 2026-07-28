@@ -340,7 +340,7 @@ fn half_to_float_simd(fx: &mut FunctionCx<'_, '_>, h: Value) -> Value {
 
   let mant_exp_mask = splat_i32(fx, 0x7fff);
   let mant_exp = fx.bcx.ins().band(h, mant_exp_mask);
-  let shifted = fx.bcx.ins().ishl_imm(mant_exp, 13);
+  let shifted = fx.bcx.ins().ishl_imm_s(mant_exp, 13);
   let as_f = fx.bcx.ins().bitcast(VEC_TYPE, no_flags, shifted);
 
   let magic = splat_f32(fx, f32::from_bits(0x7780_0000));
@@ -358,7 +358,7 @@ fn half_to_float_simd(fx: &mut FunctionCx<'_, '_>, h: Value) -> Value {
 
   let sign_mask = splat_i32(fx, 0x8000);
   let sign = fx.bcx.ins().band(h, sign_mask);
-  let sign = fx.bcx.ins().ishl_imm(sign, 16);
+  let sign = fx.bcx.ins().ishl_imm_s(sign, 16);
   let result = fx.bcx.ins().bor(merged, sign);
   fx.bcx.ins().bitcast(VEC_TYPE, no_flags, result)
 }
@@ -399,17 +399,17 @@ fn float_to_half_simd(fx: &mut FunctionCx<'_, '_>, f: Value) -> Value {
   let sub_o = fx.bcx.ins().isub(sub_bits, denorm_magic_bits);
 
   // Normalized: bias the exponent and round to nearest even.
-  let shifted13 = fx.bcx.ins().ushr_imm(abs, 13);
+  let shifted13 = fx.bcx.ins().ushr_imm_s(abs, 13);
   let one = splat_i32(fx, 1);
   let mant_odd = fx.bcx.ins().band(shifted13, one);
   let bias = splat_i32(fx, i64::from(0xc800_0fff_u32 as i32));
   let norm = fx.bcx.ins().iadd(abs, bias);
   let norm = fx.bcx.ins().iadd(norm, mant_odd);
-  let norm_o = fx.bcx.ins().ushr_imm(norm, 13);
+  let norm_o = fx.bcx.ins().ushr_imm_s(norm, 13);
 
   let o = fx.bcx.ins().bitselect(is_subnormal, sub_o, norm_o);
   let o = fx.bcx.ins().bitselect(is_infnan, infnan_o, o);
-  let sign_h = fx.bcx.ins().ushr_imm(sign, 16);
+  let sign_h = fx.bcx.ins().ushr_imm_s(sign, 16);
   fx.bcx.ins().bor(o, sign_h)
 }
 
@@ -420,7 +420,7 @@ fn half_to_float_scalar(fx: &mut FunctionCx<'_, '_>, h: Value) -> Value {
 
   let mant_exp_mask = fx.bcx.ins().iconst(types::I32, 0x7fff);
   let mant_exp = fx.bcx.ins().band(h, mant_exp_mask);
-  let shifted = fx.bcx.ins().ishl_imm(mant_exp, 13);
+  let shifted = fx.bcx.ins().ishl_imm_s(mant_exp, 13);
   let as_f = fx.bcx.ins().bitcast(types::F32, no_flags, shifted);
 
   let magic = fx.bcx.ins().f32const(f32::from_bits(0x7780_0000));
@@ -438,7 +438,7 @@ fn half_to_float_scalar(fx: &mut FunctionCx<'_, '_>, h: Value) -> Value {
 
   let sign_mask = fx.bcx.ins().iconst(types::I32, 0x8000);
   let sign = fx.bcx.ins().band(h, sign_mask);
-  let sign = fx.bcx.ins().ishl_imm(sign, 16);
+  let sign = fx.bcx.ins().ishl_imm_s(sign, 16);
   let result = fx.bcx.ins().bor(merged, sign);
   fx.bcx.ins().bitcast(types::F32, no_flags, result)
 }
@@ -564,7 +564,7 @@ fn sin_cos_simd(fx: &mut FunctionCx<'_, '_>, x: Value, mode: SinCos) -> Value {
   let n_rounded = fx.bcx.ins().nearest(n_float);
   let n_int = fx.bcx.ins().fcvt_to_sint_sat(types::I32X4, n_rounded);
 
-  let odd_n_sign = fx.bcx.ins().ishl_imm(n_int, 31);
+  let odd_n_sign = fx.bcx.ins().ishl_imm_s(n_int, 31);
 
   let sign = match mode {
     SinCos::Sin => {
@@ -693,7 +693,7 @@ fn exp_simd(fx: &mut FunctionCx<'_, '_>, x: Value) -> Value {
   let bias = fx.bcx.ins().iconst(types::I32, 0x7f);
   let bias_splat = fx.bcx.ins().splat(types::I32X4, bias);
   let biased = fx.bcx.ins().iadd(q, bias_splat);
-  let emm0 = fx.bcx.ins().ishl_imm(biased, 23);
+  let emm0 = fx.bcx.ins().ishl_imm_s(biased, 23);
   let scale = fx.bcx.ins().bitcast(VEC_TYPE, MemFlagsData::new(), emm0);
   let r = fx.bcx.ins().fmul(y, scale);
 
@@ -735,7 +735,7 @@ fn log_simd(fx: &mut FunctionCx<'_, '_>, x: Value) -> Value {
     .bitcast(types::I32X4, MemFlagsData::new(), d_scaled);
   let exp_mask = fx.bcx.ins().iconst(types::I32, 0xff);
   let exp_mask_splat = fx.bcx.ins().splat(types::I32X4, exp_mask);
-  let biased_exp = fx.bcx.ins().ushr_imm(d_scaled_bits, 23);
+  let biased_exp = fx.bcx.ins().ushr_imm_s(d_scaled_bits, 23);
   let biased_exp = fx.bcx.ins().band(biased_exp, exp_mask_splat);
   let bias = fx.bcx.ins().iconst(types::I32, 0x7f);
   let bias_splat = fx.bcx.ins().splat(types::I32X4, bias);
@@ -748,7 +748,7 @@ fn log_simd(fx: &mut FunctionCx<'_, '_>, x: Value) -> Value {
   let e = fx.bcx.ins().fcvt_from_sint(VEC_TYPE, e_int);
 
   let d_bits = fx.bcx.ins().bitcast(types::I32X4, MemFlagsData::new(), d);
-  let e_shifted = fx.bcx.ins().ishl_imm(e_int, 23);
+  let e_shifted = fx.bcx.ins().ishl_imm_s(e_int, 23);
   let m_bits = fx.bcx.ins().isub(d_bits, e_shifted);
   let m = fx.bcx.ins().bitcast(VEC_TYPE, MemFlagsData::new(), m_bits);
 
@@ -1304,7 +1304,7 @@ pub(crate) fn codegen_pixel_offset(
 
   // pixel_offset = y * stride + x * bytes_per_sample
   let row_offset = fx.bcx.ins().imul(y, src_stride);
-  let col_offset = fx.bcx.ins().imul_imm(x, src_type.bytes() as i64);
+  let col_offset = fx.bcx.ins().imul_imm_s(x, src_type.bytes() as i64);
   let pixel_offset = fx.bcx.ins().iadd(row_offset, col_offset);
 
   (src_ptr, pixel_offset)

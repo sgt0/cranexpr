@@ -21,7 +21,7 @@ impl Pointer {
     if offset == 0 {
       self.base
     } else {
-      fx.bcx.ins().iadd_imm(self.base, offset)
+      fx.bcx.ins().iadd_imm_s(self.base, offset)
     }
   }
 
@@ -39,7 +39,7 @@ impl Pointer {
       let base_offset: i64 = self.offset.into();
       if let Some(new_offset) = base_offset.checked_add(extra_offset) {
         let base_addr = self.base;
-        let addr = fx.bcx.ins().iadd_imm(base_addr, new_offset);
+        let addr = fx.bcx.ins().iadd_imm_s(base_addr, new_offset);
         Self {
           base: addr,
           offset: Offset32::new(0),
