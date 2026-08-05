@@ -669,6 +669,12 @@ fn exp_simd(fx: &mut FunctionCx<'_, '_>, x: Value) -> Value {
   let exp_p4 = splat_f32(fx, 0.166_666_671_633_720_397_949_219);
   let exp_p5 = splat_f32(fx, 0.5);
 
+  // Clamp the input so the exponent reconstruction never overflows the field.
+  let hi = splat_f32(fx, 104.0);
+  let lo = splat_f32(fx, -104.0);
+  let x = fmin_simd(fx, x, hi);
+  let x = fmax_simd(fx, x, lo);
+
   // k = round_nearest_even(x * log2e)
   let kf = fx.bcx.ins().fmul(x, log2e);
   let kf = fx.bcx.ins().nearest(kf);
@@ -689,22 +695,18 @@ fn exp_simd(fx: &mut FunctionCx<'_, '_>, x: Value) -> Value {
   let y = fx.bcx.ins().fma(y, s2, s);
   let y = fx.bcx.ins().fadd(y, one);
 
-  // Build 2^k by injecting (k + 127) into the exponent field.
-  let bias = fx.bcx.ins().iconst(types::I32, 0x7f);
-  let bias_splat = fx.bcx.ins().splat(types::I32X4, bias);
-  let biased = fx.bcx.ins().iadd(q, bias_splat);
-  let emm0 = fx.bcx.ins().ishl_imm_s(biased, 23);
-  let scale = fx.bcx.ins().bitcast(VEC_TYPE, MemFlagsData::new(), emm0);
-  let r = fx.bcx.ins().fmul(y, scale);
-
-  let over_thresh = splat_f32(fx, 104.0);
-  let under_thresh = splat_f32(fx, -104.0);
-  let zero = splat_f32(fx, 0.0);
-  let pos_inf = splat_f32(fx, f32::INFINITY);
-  let over = fx.bcx.ins().fcmp(FloatCC::GreaterThan, x, over_thresh);
-  let under = fx.bcx.ins().fcmp(FloatCC::LessThan, x, under_thresh);
-  let r = vselect_f32x4(fx, under, zero, r);
-  vselect_f32x4(fx, over, pos_inf, r)
+  // Build 2^k as the product of two half-exponent injections.
+  let bias = splat_i32(fx, 0x7f);
+  let q_hi = fx.bcx.ins().sshr_imm_s(q, 1);
+  let q_lo = fx.bcx.ins().isub(q, q_hi);
+  let biased_hi = fx.bcx.ins().iadd(q_hi, bias);
+  let biased_lo = fx.bcx.ins().iadd(q_lo, bias);
+  let emm_hi = fx.bcx.ins().ishl_imm_s(biased_hi, 23);
+  let emm_lo = fx.bcx.ins().ishl_imm_s(biased_lo, 23);
+  let scale_hi = fx.bcx.ins().bitcast(VEC_TYPE, MemFlagsData::new(), emm_hi);
+  let scale_lo = fx.bcx.ins().bitcast(VEC_TYPE, MemFlagsData::new(), emm_lo);
+  let r = fx.bcx.ins().fmul(y, scale_hi);
+  fx.bcx.ins().fmul(r, scale_lo)
 }
 
 /// Vectorized approximation of `log(x)` over F32X4.
