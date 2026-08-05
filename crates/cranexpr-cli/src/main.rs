@@ -13,9 +13,9 @@ struct Args {
   /// The expression to compile.
   expr: String,
 
-  /// Source component type.
+  /// Source component type(s). Repeat for multiple input clips.
   #[arg(long, default_value = "f32")]
-  src_type: String,
+  src_type: Vec<String>,
 
   /// Destination component type.
   #[arg(long, default_value = "f32")]
@@ -39,10 +39,14 @@ fn parse_component_type(s: &str) -> Option<ComponentType> {
 fn main() -> ExitCode {
   let args = Args::parse();
 
-  let Some(src_type) = parse_component_type(&args.src_type) else {
-    eprintln!("unknown src component type: {}", args.src_type);
-    return ExitCode::FAILURE;
-  };
+  let mut src_types = Vec::with_capacity(args.src_type.len());
+  for s in &args.src_type {
+    let Some(t) = parse_component_type(s) else {
+      eprintln!("unknown src component type: {s}");
+      return ExitCode::FAILURE;
+    };
+    src_types.push(t);
+  }
   let Some(dst_type) = parse_component_type(&args.dst_type) else {
     eprintln!("unknown dst component type: {}", args.dst_type);
     return ExitCode::FAILURE;
@@ -56,7 +60,7 @@ fn main() -> ExitCode {
     }
   };
 
-  let mut visitor = PropVisitor::new(1);
+  let mut visitor = PropVisitor::new(src_types.len());
   for node in &ast {
     visitor.visit_expr(node);
   }
@@ -71,7 +75,7 @@ fn main() -> ExitCode {
   match compile(
     &ast,
     dst_type,
-    &[src_type],
+    &src_types,
     Some(BoundaryMode::Clamp),
     &required_props,
   ) {
