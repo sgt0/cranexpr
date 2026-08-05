@@ -850,8 +850,16 @@ mod tests {
   #[case("2 3 + exp", 148.41316)]
   #[case("2 exp 3 +", 2f32.exp() + 3f32)]
   #[case("3 2 exp *", 22.16717)]
+  #[case("100 exp", f32::INFINITY)]
   fn test_exp(#[case] expr: &str, #[case] expected: f32) {
     assert_relative_eq!(run_expr(expr), expected);
+  }
+
+  #[rstest]
+  #[case("-90 exp", (-90f32).exp())]
+  #[case("-100 exp", (-100f32).exp())]
+  fn test_exp_subnormal(#[case] expr: &str, #[case] expected: f32) {
+    assert_relative_eq!(run_expr(expr), expected, max_relative = 0.5);
   }
 
   #[rstest]
