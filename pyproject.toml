@@ -11,7 +11,7 @@ dependencies = ["vapoursynth>=75"]
 
 [dependency-groups]
 dev = [
-    "ruff==0.16.1",
+    "ruff==0.16.2",
     "vapoursynth-akarin==1.4.1",
 ]
 
