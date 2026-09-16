@@ -409,14 +409,14 @@ dependencies = [
  "num-traits",
  "thiserror",
  "vapours",
- "vapoursynth4-rs",
+ "vapoursynth4-rs 0.4.0",
 ]
 
 [[package]]
 name = "cranexpr-ast"
 version = "0.12.0"
 dependencies = [
- "num-derive 0.5.1",
+ "num-derive",
  "num-traits",
  "serde",
  "strum",
@@ -815,17 +815,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "73f88a1307638156682bada9d7604135552957b7818057dcef22705b4d509495"
 dependencies = [
  "num-traits",
-]
-
-[[package]]
-name = "num-derive"
-version = "0.4.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ed3955f1a9c7c0c15e092f9c887db08b1fc683305fdf6eb6684f22555355e202"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn 2.0.119",
 ]
 
 [[package]]
@@ -1296,19 +1285,19 @@ checksum = "06abde3611657adf66d383f00b093d7faecc7fa57071cce2578660c9f1010821"
 
 [[package]]
 name = "vapours"
-version = "0.2.5"
+version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "239f8e4c421199a00692ab6bd3e1ee0dc0ebd28a17b577b69db86fd4510a99fe"
+checksum = "d560ae70789547fa44a0e982df9793e932ff64246d700e7e0682b4cb032cc2be"
 dependencies = [
  "const-str",
  "miette",
- "num-derive 0.4.2",
+ "num-derive",
  "num-traits",
  "seq-macro",
  "strum",
  "strum_macros",
  "thiserror",
- "vapoursynth4-rs",
+ "vapoursynth4-rs 0.5.1",
 ]
 
 [[package]]
@@ -1318,13 +1307,30 @@ source = "git+https://github.com/inflation/vapoursynth4-rs?rev=ae1ae21d292f9c853
 dependencies = [
  "bon",
  "thiserror",
- "vapoursynth4-sys",
+ "vapoursynth4-sys 0.3.2+R73",
+]
+
+[[package]]
+name = "vapoursynth4-rs"
+version = "0.5.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a78598c77295d8f4222d161b4377d127e2d510c00c2e5784e12e5615d5b06eb7"
+dependencies = [
+ "bon",
+ "thiserror",
+ "vapoursynth4-sys 0.4.1+R79",
 ]
 
 [[package]]
 name = "vapoursynth4-sys"
 version = "0.3.2+R73"
 source = "git+https://github.com/inflation/vapoursynth4-rs?rev=ae1ae21d292f9c8531afcedfc0aa56dda4050523#ae1ae21d292f9c8531afcedfc0aa56dda4050523"
+
+[[package]]
+name = "vapoursynth4-sys"
+version = "0.4.1+R79"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5187b816da71a85162d247b24c2fa994c858be997fb3dd27b454bf1630a76335"
 
 [[package]]
 name = "wasip2"
