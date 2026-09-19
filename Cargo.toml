@@ -34,7 +34,7 @@ const-str = "=1.1.0"
 miette = "=7.6.0"
 num-traits = "=0.2.19"
 thiserror = "=2.0.20"
-vapours = "=0.2.5"
+vapours = "=0.3.0"
 vapoursynth4-rs = "=0.4.0"
 
 cranexpr-ast = { workspace = true }
