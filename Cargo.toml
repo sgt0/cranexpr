@@ -35,7 +35,7 @@ miette = "=7.6.0"
 num-traits = "=0.2.19"
 thiserror = "=2.0.21"
 vapours = "=0.2.5"
-vapoursynth4-rs = "=0.4.0"
+vapoursynth4-rs = "=0.5.1"
 
 cranexpr-ast = { workspace = true }
 cranexpr-codegen = { workspace = true }
