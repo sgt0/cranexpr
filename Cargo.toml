@@ -34,17 +34,13 @@ const-str = "=1.1.0"
 miette = "=7.6.0"
 num-traits = "=0.2.19"
 thiserror = "=2.0.21"
-vapours = "=0.2.5"
-vapoursynth4-rs = "=0.4.0"
+vapours = "=0.3.0"
+vapoursynth4-rs = "=0.5.1"
 
 cranexpr-ast = { workspace = true }
 cranexpr-codegen = { workspace = true }
 cranexpr-parser = { workspace = true }
 cranexpr-transforms = { workspace = true }
-
-[patch.crates-io]
-vapoursynth4-rs = { git = "https://github.com/inflation/vapoursynth4-rs", rev = "ae1ae21d292f9c8531afcedfc0aa56dda4050523" }
-vapoursynth4-sys = { git = "https://github.com/inflation/vapoursynth4-rs", rev = "ae1ae21d292f9c8531afcedfc0aa56dda4050523" }
 
 [profile.release]
 codegen-units = 1
