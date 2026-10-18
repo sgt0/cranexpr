@@ -1,6 +1,5 @@
 use std::collections::HashMap;
 use std::f32::consts::PI;
-use std::ptr::NonNull;
 use std::sync::Arc;
 
 use cranelift::codegen::ir::immediates::Offset32;
@@ -20,46 +19,16 @@ use crate::MainFunction;
 use crate::SelectFunction;
 use crate::comment_writer::CommentWriter;
 use crate::component_type::ComponentType;
+use crate::context::{FunctionCx, SIMD_LANES};
 use crate::errors::{CodegenError, CodegenResult};
 use crate::lut::LutFunction;
-use crate::pointer::Pointer;
-use crate::translate_simd::{
-  SIMD_LANES, codegen_pixel_offset, load_pixel_vec_f32x4, simd_lane_offsets_f32x4,
-  store_pixel_vec_f32x4, translate_expr_simd,
+use crate::pixel_access::{
+  codegen_pixel_offset, load_pixel_vec_f32x4, simd_lane_offsets_f32x4, store_pixel_vec_f32x4,
 };
+use crate::pointer::Pointer;
+use crate::translate_simd::translate_expr_simd;
 
-pub(crate) const SRC_MEMFLAGS: MemFlagsData =
-  MemFlagsData::trusted().with_readonly().with_can_move();
 const FRAME_PROP_MEMFLAGS: MemFlagsData = MemFlagsData::trusted().with_readonly().with_can_move();
-
-pub(crate) struct FunctionCx<'m, 'clif> {
-  #[allow(dead_code)]
-  pub(crate) module: &'m mut dyn Module,
-  pub(crate) pointer_type: Type,
-
-  pub(crate) bcx: FunctionBuilder<'clif>,
-  pub(crate) variables: HashMap<String, Variable>,
-
-  /// User-defined variables created by the `var!` store expression.
-  pub(crate) user_variables: HashMap<String, Variable>,
-
-  #[allow(dead_code)]
-  pub(crate) dst_type: ComponentType,
-  pub(crate) src_types: Vec<ComponentType>,
-
-  pub(crate) boundary_mode: BoundaryMode,
-
-  // For relative pixel access
-  pub(crate) src_clips: Pointer,
-  pub(crate) src_strides: Pointer,
-  pub(crate) width: Value,
-  pub(crate) height: Value,
-
-  pub(crate) comments: CommentWriter,
-
-  /// Memoization cache.
-  pub(crate) cache: HashMap<NonNull<Expr>, Value>,
-}
 
 struct BuiltEntryFn {
   func_id: FuncId,

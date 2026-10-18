@@ -9,7 +9,7 @@ use cranexpr_transforms::{LutVisitor, Visitor};
 
 use crate::MainFunction;
 use crate::component_type::ComponentType;
-use crate::translate_simd::resolve_clip_name;
+use crate::pixel_access::resolve_clip_name;
 
 /// A compiled expression as a lookup table.
 ///
