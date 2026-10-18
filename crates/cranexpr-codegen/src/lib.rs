@@ -3,7 +3,10 @@ pub mod component_type;
 pub mod errors;
 
 mod compiler;
+mod context;
 mod lut;
+mod math_simd;
+mod pixel_access;
 mod pointer;
 mod translate_simd;
 
