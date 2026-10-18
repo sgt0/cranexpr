@@ -13,7 +13,7 @@ thiserror = "=2.0.21"
 
 [dev-dependencies]
 insta = { version = "=1.49.0", features = ["yaml"] }
-rstest = "=0.27.0"
+rstest = "=0.28.0"
 
 [lints]
 workspace = true
