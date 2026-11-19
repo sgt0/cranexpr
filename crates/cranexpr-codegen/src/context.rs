@@ -40,6 +40,17 @@ pub(crate) struct FunctionCx<'m, 'clif> {
   pub(crate) width: Value,
   pub(crate) height: Value,
 
+  /// Per-clip `(base pointer, stride)` loaded once at function entry.
+  pub(crate) clip_bases: Vec<(Value, Value)>,
+
+  /// Per-row source row pointers keyed by `(clip, rel_y, boundary mode)`,
+  /// with the vertical boundary already applied.
+  pub(crate) row_ptrs: HashMap<(usize, i32, BoundaryMode), Value>,
+
+  /// Whether the pixel body being emitted is in the interior X range, where
+  /// every horizontal relative access is in bounds and needs no fixup.
+  pub(crate) interior: bool,
+
   pub(crate) comments: CommentWriter,
 
   /// Memoization cache.

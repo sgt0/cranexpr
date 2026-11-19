@@ -5,7 +5,7 @@ use serde::Serialize;
 use strum_macros::{Display, EnumString};
 
 /// Boundary handling mode.
-#[derive(Clone, Copy, Debug, Eq, FromPrimitive, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Eq, FromPrimitive, Hash, PartialEq, Serialize)]
 pub enum BoundaryMode {
   /// Clamped boundary.
   Clamp = 0,
