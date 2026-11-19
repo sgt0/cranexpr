@@ -52,6 +52,15 @@ fn translate_expr_simd_inner(
       let x = translate_expr_simd(fx, x)?;
       Ok(atan2_simd(fx, y, x))
     }
+    Expr::Binary(BinOp::Div, lhs, rhs)
+      if let Expr::Lit(divisor) = rhs.as_ref()
+        && let Some(recip) = exact_reciprocal(*divisor) =>
+    {
+      // Multiplying by an exact reciprocal gives the same result as dividing.
+      let lhs = translate_expr_simd(fx, lhs)?;
+      let recip = splat_f32(fx, recip);
+      Ok(fx.bcx.ins().fmul(lhs, recip))
+    }
     Expr::Binary(op, lhs, rhs) => {
       let lhs = translate_expr_simd(fx, lhs)?;
       let rhs = translate_expr_simd(fx, rhs)?;
@@ -212,6 +221,14 @@ fn translate_expr_simd_inner(
       ))
     }
   }
+}
+
+/// Returns `1 / x` if `x` is a power of two whose reciprocal is a normal
+/// number.
+fn exact_reciprocal(x: f32) -> Option<f32> {
+  const MANTISSA_MASK: u32 = (1 << 23) - 1;
+  let recip = 1.0 / x;
+  (x.is_normal() && x.to_bits() & MANTISSA_MASK == 0 && recip.is_normal()).then_some(recip)
 }
 
 fn pow_simd(
