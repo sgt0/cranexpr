@@ -51,6 +51,9 @@ pub(crate) struct FunctionCx<'m, 'clif> {
   /// every horizontal relative access is in bounds and needs no fixup.
   pub(crate) interior: bool,
 
+  /// The current row's `Y` splatted to every lane.
+  pub(crate) row_y: Option<Value>,
+
   pub(crate) comments: CommentWriter,
 
   /// Memoization cache.

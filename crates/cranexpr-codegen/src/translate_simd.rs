@@ -61,6 +61,19 @@ fn translate_expr_simd_inner(
       let recip = splat_f32(fx, recip);
       Ok(fx.bcx.ins().fmul(lhs, recip))
     }
+    Expr::Binary(BinOp::Rem, lhs, rhs)
+      if let Expr::Lit(divisor) = rhs.as_ref()
+        && let Some(recip) = exact_reciprocal(*divisor) =>
+    {
+      // x - trunc(x * (1 / y)) * y.
+      let lhs = translate_expr_simd(fx, lhs)?;
+      let recip = splat_f32(fx, recip);
+      let divisor = splat_f32(fx, *divisor);
+      let quot = fx.bcx.ins().fmul(lhs, recip);
+      let trunc_quot = fx.bcx.ins().trunc(quot);
+      let prod = fx.bcx.ins().fmul(trunc_quot, divisor);
+      Ok(fx.bcx.ins().fsub(lhs, prod))
+    }
     Expr::Binary(op, lhs, rhs) => {
       let lhs = translate_expr_simd(fx, lhs)?;
       let rhs = translate_expr_simd(fx, rhs)?;
@@ -123,6 +136,11 @@ fn translate_expr_simd_inner(
         && let Some(var) = fx.variables.get("simd_X")
       {
         return Ok(fx.bcx.use_var(*var));
+      }
+      if name == "Y"
+        && let Some(y) = fx.row_y
+      {
+        return Ok(y);
       }
 
       let variable = if let Ok(clip_idx) = resolve_clip_name(name, &fx.src_types) {

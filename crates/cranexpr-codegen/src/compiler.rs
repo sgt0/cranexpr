@@ -303,6 +303,7 @@ fn build_entry_fn(
       clip_bases: Vec::new(),
       row_ptrs: HashMap::new(),
       interior: false,
+      row_y: None,
       comments: CommentWriter::new(),
       cache: HashMap::new(),
     };
@@ -368,7 +369,8 @@ fn build_entry_fn(
           fx.variables.insert(format!("simd_src{var_idx}"), var);
         }
 
-        let x_f32 = fx.bcx.ins().fcvt_from_uint(types::F32, x_coord);
+        // Coordinates are non-negative.
+        let x_f32 = fx.bcx.ins().fcvt_from_sint(types::F32, x_coord);
         let x_splat = fx.bcx.ins().splat(types::F32X4, x_f32);
         let x_vec = fx.bcx.ins().fadd(x_splat, lane_offsets_val);
         let x_var = fx.bcx.declare_var(types::F32X4);
@@ -407,6 +409,8 @@ fn build_entry_fn(
     let lanes_val = fx.bcx.ins().iconst(types::I64, lanes);
     codegen_for_loop(&mut fx, start_idx, height, step, |fx, y_coord| {
       codegen_variable(fx, "Y", y_coord);
+      let y_f32 = fx.bcx.ins().fcvt_from_sint(types::F32, y_coord);
+      fx.row_y = Some(fx.bcx.ins().splat(types::F32X4, y_f32));
 
       fx.row_ptrs.clear();
       for &(clip_idx, rel_y, mode) in &rows {
@@ -538,6 +542,7 @@ fn build_select_fn(
       clip_bases: Vec::new(),
       row_ptrs: HashMap::new(),
       interior: false,
+      row_y: None,
       comments: CommentWriter::new(),
       cache: HashMap::new(),
     };
@@ -2155,6 +2160,100 @@ mod tests {
     // Without relative access, the LUT is built by running the integer path
     // over every input value.
     check_u8_weighted_sum("x 3 * 4 /", 0.0, &[(0, 0, 3.0)], 4.0, BoundaryMode::Clamp);
+  }
+
+  /// Runs `expr` over `clips` 8-bit planes of random data.
+  fn run_expr_u8_clips(expr: &str, clips: usize, width: usize, height: usize) -> Vec<u8> {
+    let planes: Vec<_> = (0..clips)
+      .map(|i| {
+        let flat: Vec<u8> = random_u8_plane(width, height, i as u32 + 7)
+          .into_iter()
+          .flatten()
+          .collect();
+        let (mut buf, stride) = alloc_aligned_plane(width, height);
+        fill_plane(buf.as_mut_slice(), stride, &flat, width, height);
+        (buf, stride)
+      })
+      .collect();
+    let (mut dst_buf, dst_stride) = alloc_aligned_plane(width, height);
+
+    let ast = cranexpr_parser::parse_expr(expr).unwrap();
+    let compiled = compile_jit(
+      &ast,
+      ComponentType::U8,
+      &vec![ComponentType::U8; clips],
+      None,
+      &[],
+    )
+    .expect("should compile expr");
+
+    let src_ptrs: Vec<_> = planes.iter().map(|(buf, _)| buf.as_ptr()).collect();
+    let src_strides: Vec<_> = planes.iter().map(|&(_, stride)| stride as i64).collect();
+    unsafe {
+      compiled.invoke(
+        dst_buf.as_mut_slice(),
+        dst_stride as i64,
+        &src_ptrs,
+        &src_strides,
+        width as i32,
+        height as i32,
+        0,
+        &[],
+      );
+    }
+    unpack_plane::<u8>(dst_buf.as_slice(), dst_stride, width, height)
+  }
+
+  #[rstest]
+  #[case::fine_sharp(
+    "x y = x dup x y - 256 256 / / dup dup dup abs 1.49 / 1.272 pow swap3 abs 6.0 + / swap dup * dup 6.0 + / * * 2.0 * + ?",
+    2
+  )]
+  #[case::swapped_order("y x - 3 * x +", 2)]
+  #[case::non_adjacent_clips("z x - 2 / 128 +", 3)]
+  #[case::aliased_clip("x src0 + y -", 2)]
+  fn test_u8_two_clip_lut_matches_simd(#[case] expr: &str, #[case] clips: usize) {
+    let (width, height) = (37, 5);
+    let lut = run_expr_u8_clips(expr, clips, width, height);
+    let simd = run_expr_u8_clips(&format!("{expr} X 0 * +"), clips, width, height);
+    assert_eq!(lut, simd);
+  }
+
+  #[rstest]
+  fn test_simd_deblock_mask_rows() {
+    let (width, height) = (21, 19);
+    let rows = vec![vec![0u8; width]; height];
+    let rows: Vec<&[u8]> = rows.iter().map(Vec::as_slice).collect();
+    let out = run_expr_u8_padded("X 8 % 7 % Y 8 % 7 % and 0 255 ?", &rows);
+    for (y, row) in out.iter().enumerate() {
+      let expected: Vec<u8> = (0..width)
+        .map(|x| {
+          if x % 8 % 7 != 0 && y % 8 % 7 != 0 {
+            0
+          } else {
+            255
+          }
+        })
+        .collect();
+      assert_eq!(row, &expected, "row {y}");
+    }
+  }
+
+  #[rstest]
+  #[case(8.0)]
+  #[case(0.25)]
+  #[case(-4.0)]
+  fn test_simd_rem_power_of_two(#[case] divisor: f32) {
+    let src: &[&[f32]] = &[&[-17.5, -8.0, -3.0, -0.0, 0.3, 7.0, 8.0, 123.75]];
+    let out = run_expr_padded(&format!("x {divisor} %"), src, None);
+    let expected: Vec<f32> = src[0]
+      .iter()
+      .map(|v| v - (v / divisor).trunc() * divisor)
+      .collect();
+    assert_eq!(out[0].len(), expected.len());
+    for (got, want) in out[0].iter().zip(&expected) {
+      assert_eq!(got.to_bits(), want.to_bits(), "{got} vs {want}");
+    }
   }
 
   #[rstest]
