@@ -170,40 +170,41 @@ pub(crate) fn translate_rel_access_simd(
     .variables
     .get("X")
     .ok_or_else(|| CodegenError::UndefinedVariable("X".to_string()))?;
-  let y_var = fx
-    .variables
-    .get("Y")
-    .ok_or_else(|| CodegenError::UndefinedVariable("Y".to_string()))?;
   let x_base = fx.bcx.use_var(*x_var);
-  let y_base = fx.bcx.use_var(*y_var);
 
   let src_type = fx.src_types[clip_idx];
 
-  let target_y = if rel_y == 0 {
-    y_base
+  let row = if let Some(&row) = fx.row_ptrs.get(&(clip_idx, rel_y, boundary_mode)) {
+    row
   } else {
-    let rel_y_val = fx.bcx.ins().iconst(types::I64, i64::from(rel_y));
-    let shifted_y = fx.bcx.ins().iadd(y_base, rel_y_val);
-    codegen_boundary_mode(fx, shifted_y, fx.height, boundary_mode)
+    let y_var = fx
+      .variables
+      .get("Y")
+      .ok_or_else(|| CodegenError::UndefinedVariable("Y".to_string()))?;
+    let y_base = fx.bcx.use_var(*y_var);
+    codegen_row_ptr(fx, clip_idx, y_base, rel_y, boundary_mode)
   };
+  let row = Pointer::new(row);
 
-  if rel_x == 0 {
-    let (src_ptr, pixel_offset) = codegen_pixel_offset(fx, clip_idx, x_base, target_y, src_type);
+  if rel_x == 0 || fx.interior {
+    // Every lane is in bounds, so this is a plain (possibly unaligned) load.
+    let row = row.offset_i64(fx, i64::from(rel_x) * src_type.bytes() as i64);
+    let col_offset = fx.bcx.ins().imul_imm_s(x_base, src_type.bytes() as i64);
     return Ok(load_pixel_vec_f32x4(
       fx,
-      src_ptr,
-      pixel_offset,
+      row,
+      col_offset,
       src_type,
-      true,
+      rel_x == 0,
     ));
   }
 
   match boundary_mode {
     BoundaryMode::Clamp => Ok(translate_rel_access_clamp_x(
-      fx, clip_idx, rel_x, target_y, x_base,
+      fx, clip_idx, rel_x, row, x_base,
     )),
     BoundaryMode::Mirror => Ok(translate_rel_access_mirror_x(
-      fx, clip_idx, rel_x, target_y, x_base,
+      fx, clip_idx, rel_x, row, x_base,
     )),
   }
 }
@@ -212,7 +213,7 @@ fn translate_rel_access_clamp_x(
   fx: &mut FunctionCx<'_, '_>,
   clip_idx: usize,
   rel_x: i32,
-  target_y: Value,
+  row: Pointer,
   x_base: Value,
 ) -> Value {
   let src_type = fx.src_types[clip_idx];
@@ -232,8 +233,8 @@ fn translate_rel_access_clamp_x(
   let too_small = fx.bcx.ins().icmp(IntCC::SignedLessThan, clamped_hi, zero);
   let clamped_x = fx.bcx.ins().select(too_small, zero, clamped_hi);
 
-  let (src_ptr, pixel_offset) = codegen_pixel_offset(fx, clip_idx, clamped_x, target_y, src_type);
-  let raw = load_pixel_vec_f32x4(fx, src_ptr, pixel_offset, src_type, false);
+  let col_offset = fx.bcx.ins().imul_imm_s(clamped_x, src_type.bytes() as i64);
+  let raw = load_pixel_vec_f32x4(fx, row, col_offset, src_type, false);
 
   if rel_x < 0 {
     apply_left_swizzle_fixup(fx, raw, x_base, rel_x)
@@ -385,7 +386,7 @@ fn translate_rel_access_mirror_x(
   fx: &mut FunctionCx<'_, '_>,
   clip_idx: usize,
   rel_x: i32,
-  target_y: Value,
+  row: Pointer,
   x_base: Value,
 ) -> Value {
   let src_type = fx.src_types[clip_idx];
@@ -399,9 +400,8 @@ fn translate_rel_access_mirror_x(
     let x_unshifted = fx.bcx.ins().iadd(x_base, lane_off);
     let x_shifted = fx.bcx.ins().iadd(x_unshifted, rel_x_val);
     let x_mirrored = codegen_boundary_mode(fx, x_shifted, fx.width, BoundaryMode::Mirror);
-    let (src_ptr, pixel_offset) =
-      codegen_pixel_offset(fx, clip_idx, x_mirrored, target_y, src_type);
-    let scalar = load_scalar_as_f32(fx, src_ptr, pixel_offset, src_type);
+    let col_offset = fx.bcx.ins().imul_imm_s(x_mirrored, src_type.bytes() as i64);
+    let scalar = load_scalar_as_f32(fx, row, col_offset, src_type);
     vec = fx.bcx.ins().insertlane(vec, scalar, lane as u8);
   }
   vec
@@ -461,6 +461,49 @@ fn load_scalar_as_f32(
   }
 }
 
+/// Returns the `(base pointer, stride)` of a source clip, preferring the
+/// values loaded at function entry.
+fn clip_base(fx: &mut FunctionCx<'_, '_>, clip_idx: usize) -> (Value, Value) {
+  if let Some(&base) = fx.clip_bases.get(clip_idx) {
+    return base;
+  }
+  load_clip_base(fx, clip_idx)
+}
+
+/// Loads the base pointer and stride of a source clip.
+pub(crate) fn load_clip_base(fx: &mut FunctionCx<'_, '_>, clip_idx: usize) -> (Value, Value) {
+  let pointer_size = fx.pointer_type.bytes() as i32;
+  let src_ptr = fx
+    .src_clips
+    .offset(fx, Offset32::new(clip_idx as i32 * pointer_size))
+    .load(fx, fx.pointer_type, SRC_MEMFLAGS);
+  let src_stride = fx
+    .src_strides
+    .offset(fx, Offset32::new(clip_idx as i32 * 8))
+    .load(fx, types::I64, SRC_MEMFLAGS);
+  (src_ptr, src_stride)
+}
+
+/// Computes the pointer to the start of the source row `y + rel_y` with the
+/// vertical boundary mode applied.
+pub(crate) fn codegen_row_ptr(
+  fx: &mut FunctionCx<'_, '_>,
+  clip_idx: usize,
+  y: Value,
+  rel_y: i32,
+  boundary_mode: BoundaryMode,
+) -> Value {
+  let target_y = if rel_y == 0 {
+    y
+  } else {
+    let shifted_y = fx.bcx.ins().iadd_imm_s(y, i64::from(rel_y));
+    codegen_boundary_mode(fx, shifted_y, fx.height, boundary_mode)
+  };
+  let (src_ptr, src_stride) = clip_base(fx, clip_idx);
+  let row_offset = fx.bcx.ins().imul(target_y, src_stride);
+  fx.bcx.ins().iadd(src_ptr, row_offset)
+}
+
 /// Computes the byte offset for a pixel at (x, y).
 pub(crate) fn codegen_pixel_offset(
   fx: &mut FunctionCx<'_, '_>,
@@ -469,19 +512,8 @@ pub(crate) fn codegen_pixel_offset(
   y: Value,
   src_type: ComponentType,
 ) -> (Pointer, Value) {
-  // Load source pointer for this clip.
-  let pointer_size = fx.pointer_type.bytes() as i32;
-  let src_ptr_val = fx
-    .src_clips
-    .offset(fx, Offset32::new(clip_idx as i32 * pointer_size))
-    .load(fx, fx.pointer_type, SRC_MEMFLAGS);
+  let (src_ptr_val, src_stride) = clip_base(fx, clip_idx);
   let src_ptr = Pointer::new(src_ptr_val);
-
-  // Load stride for this clip.
-  let src_stride = fx
-    .src_strides
-    .offset(fx, Offset32::new(clip_idx as i32 * 8))
-    .load(fx, types::I64, SRC_MEMFLAGS);
 
   // pixel_offset = y * stride + x * bytes_per_sample
   let row_offset = fx.bcx.ins().imul(y, src_stride);

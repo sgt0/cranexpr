@@ -11,7 +11,7 @@ use cranelift::{codegen::Context, prelude::FunctionBuilderContext};
 use cranelift_jit::{JITBuilder, JITModule};
 use cranelift_module::{FuncId, Linkage, Module, ModuleError};
 use cranexpr_ast::{BoundaryMode, Expr};
-use cranexpr_transforms::simplify;
+use cranexpr_transforms::{Visitor, simplify, walk_expr};
 use nanoid::nanoid;
 
 use crate::CompiledExpr;
@@ -23,7 +23,8 @@ use crate::context::{FunctionCx, SIMD_LANES};
 use crate::errors::{CodegenError, CodegenResult};
 use crate::lut::LutFunction;
 use crate::pixel_access::{
-  codegen_pixel_offset, load_pixel_vec_f32x4, simd_lane_offsets_f32x4, store_pixel_vec_f32x4,
+  codegen_row_ptr, load_clip_base, load_pixel_vec_f32x4, resolve_clip_name,
+  simd_lane_offsets_f32x4, store_pixel_vec_f32x4,
 };
 use crate::pointer::Pointer;
 use crate::translate_simd::translate_expr_simd;
@@ -298,9 +299,16 @@ fn build_entry_fn(
       src_strides: Pointer::new(src_strides_ptr),
       width,
       height,
+      clip_bases: Vec::new(),
+      row_ptrs: HashMap::new(),
+      interior: false,
       comments: CommentWriter::new(),
       cache: HashMap::new(),
     };
+
+    fx.clip_bases = (0..src_types.len())
+      .map(|i| load_clip_base(&mut fx, i))
+      .collect();
 
     // Constants.
     codegen_variable(&mut fx, "width", width);
@@ -331,14 +339,28 @@ fn build_entry_fn(
 
     let lane_offsets_val = simd_lane_offsets_f32x4(&mut fx);
     let src_types_owned = src_types.to_vec();
+    let mut rel_accesses = RelAccessCollector::default();
+    for expr in ast {
+      rel_accesses.visit_expr(expr);
+    }
+    let rows: Vec<(usize, i32, BoundaryMode)> = rel_accesses
+      .accesses
+      .iter()
+      .map(|(clip, rel_y, mode)| {
+        let clip_idx = resolve_clip_name(clip, src_types)?;
+        Ok((clip_idx, *rel_y, mode.unwrap_or(fx.boundary_mode)))
+      })
+      .chain((0..src_types.len()).map(|i| Ok((i, 0, BoundaryMode::Clamp))))
+      .collect::<CodegenResult<_>>()?;
+
     let simd_pixel_body =
-      |fx: &mut FunctionCx<'_, '_>, y_coord: Value, x_coord: Value| -> CodegenResult<()> {
+      |fx: &mut FunctionCx<'_, '_>, dst_row: Value, x_coord: Value| -> CodegenResult<()> {
         codegen_variable(fx, "X", x_coord);
 
         for (var_idx, src_type) in src_types_owned.iter().enumerate() {
-          let (src_ptr, pixel_offset) =
-            codegen_pixel_offset(fx, var_idx, x_coord, y_coord, *src_type);
-          let val = load_pixel_vec_f32x4(fx, src_ptr, pixel_offset, *src_type, true);
+          let row = fx.row_ptrs[&(var_idx, 0, BoundaryMode::Clamp)];
+          let col_offset = fx.bcx.ins().imul_imm_s(x_coord, src_type.bytes() as i64);
+          let val = load_pixel_vec_f32x4(fx, Pointer::new(row), col_offset, *src_type, true);
 
           let var = fx.bcx.declare_var(types::F32X4);
           fx.bcx.def_var(var, val);
@@ -357,10 +379,14 @@ fn build_entry_fn(
         }
         let expr_val = translate_expr_simd(fx, last_expr)?;
 
-        let dest_row_offset = fx.bcx.ins().imul(y_coord, dst_stride);
         let dest_col_offset = fx.bcx.ins().imul_imm_s(x_coord, dst_type.bytes() as i64);
-        let dest_offset = fx.bcx.ins().iadd(dest_row_offset, dest_col_offset);
-        store_pixel_vec_f32x4(fx, dest_ptr, dest_offset, expr_val, dst_type);
+        store_pixel_vec_f32x4(
+          fx,
+          Pointer::new(dst_row),
+          dest_col_offset,
+          expr_val,
+          dst_type,
+        );
 
         fx.variables
           .retain(|k, _| !k.starts_with("simd_") && !k.starts_with("src"));
@@ -370,12 +396,58 @@ fn build_entry_fn(
         Ok(())
       };
 
-    let lanes_val = fx.bcx.ins().iconst(types::I64, SIMD_LANES);
+    // Split each row into left edge, interior, and right edge X ranges. In
+    // the interior, every horizontal relative access stays within the row, so
+    // the body is emitted without horizontal boundary handling.
+    let lanes = SIMD_LANES;
+    let left_reach = i64::from(rel_accesses.max_left);
+    let right_reach = i64::from(rel_accesses.max_right);
+    let lanes_val = fx.bcx.ins().iconst(types::I64, lanes);
     codegen_for_loop(&mut fx, start_idx, height, step, |fx, y_coord| {
       codegen_variable(fx, "Y", y_coord);
-      codegen_for_loop(fx, start_idx, width, lanes_val, |fx, x_coord| {
-        simd_pixel_body(fx, y_coord, x_coord)
-      })
+
+      fx.row_ptrs.clear();
+      for &(clip_idx, rel_y, mode) in &rows {
+        if !fx.row_ptrs.contains_key(&(clip_idx, rel_y, mode)) {
+          let row = codegen_row_ptr(fx, clip_idx, y_coord, rel_y, mode);
+          fx.row_ptrs.insert((clip_idx, rel_y, mode), row);
+        }
+      }
+      let dst_row_offset = fx.bcx.ins().imul(y_coord, dst_stride);
+      let dst_base = dest_ptr.get_addr(fx);
+      let dst_row = fx.bcx.ins().iadd(dst_base, dst_row_offset);
+
+      if left_reach == 0 && right_reach == 0 {
+        codegen_for_loop(fx, start_idx, width, lanes_val, |fx, x_coord| {
+          simd_pixel_body(fx, dst_row, x_coord)
+        })?;
+        return Ok(());
+      }
+
+      // Left edge: x < round_up(left_reach, lanes), bounded by the width.
+      let left_end = (left_reach + lanes - 1) / lanes * lanes;
+      let left_end = fx.bcx.ins().iconst(types::I64, left_end);
+      let left_end = fx.bcx.ins().umin(left_end, width);
+      let x = codegen_for_loop(fx, start_idx, left_end, lanes_val, |fx, x_coord| {
+        simd_pixel_body(fx, dst_row, x_coord)
+      })?;
+
+      // Interior: x + lanes - 1 + right_reach <= width - 1.
+      let interior_end = fx.bcx.ins().iadd_imm_s(width, -(lanes - 1 + right_reach));
+      let zero = fx.bcx.ins().iconst(types::I64, 0);
+      let interior_end = fx.bcx.ins().smax(interior_end, zero);
+      fx.interior = true;
+      let x = codegen_for_loop(fx, x, interior_end, lanes_val, |fx, x_coord| {
+        simd_pixel_body(fx, dst_row, x_coord)
+      });
+      fx.interior = false;
+      let x = x?;
+
+      // Right edge and tail.
+      codegen_for_loop(fx, x, width, lanes_val, |fx, x_coord| {
+        simd_pixel_body(fx, dst_row, x_coord)
+      })?;
+      Ok(())
     })?;
 
     fx.bcx.ins().return_(&[]);
@@ -451,6 +523,9 @@ fn build_select_fn(
       src_strides: Pointer::new(props_ptr),
       width,
       height,
+      clip_bases: Vec::new(),
+      row_ptrs: HashMap::new(),
+      interior: false,
       comments: CommentWriter::new(),
       cache: HashMap::new(),
     };
@@ -508,7 +583,7 @@ fn codegen_for_loop(
   stop_idx: Value,
   step: Value,
   mut codegen_loop_body: impl FnMut(&mut FunctionCx<'_, '_>, Value) -> CodegenResult<()>,
-) -> CodegenResult<()> {
+) -> CodegenResult<Value> {
   let current_block = fx.bcx.current_block().unwrap();
   let loop_header_block = fx.bcx.create_block();
   let loop_body_block = fx.bcx.create_block();
@@ -550,7 +625,39 @@ fn codegen_for_loop(
   fx.bcx.seal_block(loop_body_block);
   fx.bcx.seal_block(continue_block);
 
-  Ok(())
+  // The header dominates the continue block, so its index parameter holds
+  // the first index at which the loop exited.
+  Ok(idx)
+}
+
+/// Collects the vertical offsets and horizontal reach of relative accesses.
+#[derive(Default)]
+struct RelAccessCollector<'a> {
+  accesses: Vec<(&'a str, i32, Option<BoundaryMode>)>,
+  /// Largest leftward offset, as a non-negative distance.
+  max_left: u32,
+  /// Largest rightward offset.
+  max_right: u32,
+}
+
+impl<'a> Visitor<'a> for RelAccessCollector<'a> {
+  fn visit_expr(&mut self, expr: &'a Expr) {
+    if let Expr::RelAccess {
+      clip,
+      rel_x,
+      rel_y,
+      boundary_mode,
+    } = expr
+    {
+      self.accesses.push((clip, *rel_y, *boundary_mode));
+      if *rel_x < 0 {
+        self.max_left = self.max_left.max(rel_x.unsigned_abs());
+      } else {
+        self.max_right = self.max_right.max(rel_x.unsigned_abs());
+      }
+    }
+    walk_expr(self, expr);
+  }
 }
 
 fn codegen_variable<K: Into<String>>(fx: &mut FunctionCx<'_, '_>, name: K, data: Value) {
