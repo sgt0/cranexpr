@@ -8,9 +8,9 @@ use vapoursynth4_rs::{
   VideoInfo,
   core::CoreRef,
   ffi::VSFrame,
-  frame::{Frame, FrameContext, VideoFrame},
+  frame::{FrameContext, VideoFrame},
   key,
-  map::{Key, MapRef},
+  map::{Key, MapMut, MapRef},
   node::{
     ActivationReason, Dependencies, Filter, FilterDependency, Node, RequestPattern, VideoNode,
   },
@@ -105,9 +105,9 @@ impl Filter for SelectFilter {
   #[inline]
   fn create(
     input: MapRef<'_>,
-    output: MapRef<'_>,
-    _data: Option<Box<Self::FilterData>>,
-    mut core: CoreRef<'_>,
+    mut output: MapMut<'_>,
+    _data: Option<&Self::FilterData>,
+    core: CoreRef<'_>,
   ) -> Result<(), Self::Error> {
     let Some(num_clip_src) = input.num_elements(key!(c"clip_src")) else {
       return Err(CranexprError::EmptyClipSrc);
@@ -237,7 +237,7 @@ impl Filter for SelectFilter {
     };
 
     core.create_video_filter(
-      output,
+      &mut output,
       cstr!("Select"),
       &vi,
       Box::new(filter),
@@ -313,16 +313,21 @@ impl Filter for SelectFilter {
           .collect();
         let plane_src_indices: Vec<i32> = (0..num_planes as i32).collect();
 
-        let dst = core.new_video_frame2(
-          &self.vi.format,
-          self.vi.width,
-          self.vi.height,
-          &plane_src_ptrs,
-          &plane_src_indices,
-          Some(&plane_frames[0]),
-        );
+        // SAFETY: There is one source frame and index per plane, and every
+        // clip in `clip_src` was checked to have the same format and
+        // dimensions as `self.vi`.
+        let dst = unsafe {
+          core.new_video_frame2(
+            &self.vi.format,
+            self.vi.width,
+            self.vi.height,
+            &plane_src_ptrs,
+            &plane_src_indices,
+            Some(&plane_frames[0]),
+          )
+        };
 
-        Ok(Some(dst))
+        Ok(Some(dst.freeze()))
       }
       ActivationReason::Error => {
         let state_ptr = unsafe { *frame_data }.cast::<FrameState>();

@@ -5,13 +5,13 @@ use std::{
   ffi::{CStr, c_void},
   ptr,
 };
-use vapours::{frame::VapoursVideoFrame, generic::HoldsVideoFormat};
+use vapours::{frame::VapoursVideoFrameMut, generic::HoldsVideoFormat};
 use vapoursynth4_rs::{
-  ColorFamily, SampleType, VideoInfo,
+  SampleType, VideoInfo,
   core::CoreRef,
-  frame::{Frame, FrameContext, VideoFrame},
+  frame::{FrameContext, VideoFrame},
   key,
-  map::{Key, MapRef},
+  map::{Key, MapMut, MapRef},
   node::{
     ActivationReason, Dependencies, Filter, FilterDependency, Node, RequestPattern, VideoNode,
   },
@@ -50,9 +50,9 @@ impl Filter for CranexprFilter {
   #[inline]
   fn create(
     input: MapRef<'_>,
-    output: MapRef<'_>,
-    _data: Option<Box<Self::FilterData>>,
-    mut core: CoreRef<'_>,
+    mut output: MapMut<'_>,
+    _data: Option<&Self::FilterData>,
+    core: CoreRef<'_>,
   ) -> Result<(), Self::Error> {
     let Some(num_inputs) = input.num_elements(key!(c"clips")) else {
       return Err(CranexprError::NumberOfClips);
@@ -72,19 +72,21 @@ impl Filter for CranexprFilter {
     }
 
     let mut vi = video_infos[0].clone();
-    if let Ok(format) = input.get_int_saturated(key!(c"format"), 0) {
-      let f = core.get_video_format_by_id(format as u32);
-      if f.color_family != ColorFamily::Undefined {
-        if vi.format.num_planes != f.num_planes {
-          return Err(CranexprError::PlanesMismatch);
-        }
-        vi.format = core.query_video_format(
-          f.color_family,
-          f.sample_type,
-          f.bits_per_sample,
-          f.sub_sampling_w,
-          f.sub_sampling_h,
-        );
+    if let Ok(format) = input.get_int_saturated(key!(c"format"), 0)
+      && let Some(f) = core.get_video_format_by_id(format as u32)
+    {
+      if vi.format.num_planes != f.num_planes {
+        return Err(CranexprError::PlanesMismatch);
+      }
+
+      if let Some(f) = core.query_video_format(
+        vi.format.color_family,
+        f.sample_type,
+        f.bits_per_sample,
+        vi.format.sub_sampling_w,
+        vi.format.sub_sampling_h,
+      ) {
+        vi.format = f;
       }
     }
 
@@ -190,7 +192,7 @@ impl Filter for CranexprFilter {
       .collect::<Vec<FilterDependency>>();
 
     core.create_video_filter(
-      output,
+      &mut output,
       cstr!("Expr"),
       &vi,
       Box::new(filter),
@@ -224,30 +226,35 @@ impl Filter for CranexprFilter {
 
         let height = src[0].frame_height(0);
         let width = src[0].frame_width(0);
-        let mut dst = core.new_video_frame2(
-          &self.vi.format,
-          width,
-          height,
-          &[
-            if self.planes[0] == PlaneOp::Copy {
-              src[0].as_ptr()
-            } else {
-              ptr::null()
-            },
-            if self.planes[1] == PlaneOp::Copy {
-              src[0].as_ptr()
-            } else {
-              ptr::null()
-            },
-            if self.planes[2] == PlaneOp::Copy {
-              src[0].as_ptr()
-            } else {
-              ptr::null()
-            },
-          ],
-          &[0, 1, 2],
-          Some(&src[0]),
-        );
+        // SAFETY: Both arrays have 3 entries. Planes are only copied from
+        // `src[0]` when its sample type and depth match the output's, and
+        // the output keeps the subsampling and dimensions of `src[0]`.
+        let mut dst = unsafe {
+          core.new_video_frame2(
+            &self.vi.format,
+            width,
+            height,
+            &[
+              if self.planes[0] == PlaneOp::Copy {
+                src[0].as_ptr()
+              } else {
+                ptr::null()
+              },
+              if self.planes[1] == PlaneOp::Copy {
+                src[0].as_ptr()
+              } else {
+                ptr::null()
+              },
+              if self.planes[2] == PlaneOp::Copy {
+                src[0].as_ptr()
+              } else {
+                ptr::null()
+              },
+            ],
+            &[0, 1, 2],
+            Some(&src[0]),
+          )
+        };
 
         for (plane_idx, (_plane_op, expr)) in self
           .planes
@@ -348,7 +355,7 @@ impl Filter for CranexprFilter {
           }
         }
 
-        return Ok(Some(dst));
+        return Ok(Some(dst.freeze()));
       }
       ActivationReason::Error => {}
     }

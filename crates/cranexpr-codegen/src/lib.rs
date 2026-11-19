@@ -23,6 +23,11 @@ pub struct MainFunction {
   ptr: *const u8,
 }
 
+// SAFETY: `ptr` points to finalized JIT code whose module is never freed, so
+// the code stays valid and immutable for the rest of the process.
+unsafe impl Send for MainFunction {}
+unsafe impl Sync for MainFunction {}
+
 impl MainFunction {
   pub(crate) const fn from_ptr(ptr: *const u8) -> Self {
     Self { ptr }
@@ -126,6 +131,11 @@ impl CompiledExpr {
 pub struct SelectFunction {
   ptr: *const u8,
 }
+
+// SAFETY: `ptr` points to finalized JIT code whose module is never freed, so
+// the code stays valid and immutable for the rest of the process.
+unsafe impl Send for SelectFunction {}
+unsafe impl Sync for SelectFunction {}
 
 impl SelectFunction {
   pub(crate) const fn from_ptr(ptr: *const u8) -> Self {
