@@ -21,6 +21,7 @@ use crate::comment_writer::CommentWriter;
 use crate::component_type::ComponentType;
 use crate::context::{FunctionCx, SIMD_LANES};
 use crate::errors::{CodegenError, CodegenResult};
+use crate::int_path::{INT_LANES, IntPlan};
 use crate::lut::LutFunction;
 use crate::pixel_access::{
   codegen_row_ptr, load_clip_base, load_pixel_vec_f32x4, resolve_clip_name,
@@ -399,6 +400,7 @@ fn build_entry_fn(
     // Split each row into left edge, interior, and right edge X ranges. In
     // the interior, every horizontal relative access stays within the row, so
     // the body is emitted without horizontal boundary handling.
+    let int_plan = IntPlan::new(ast, dst_type, src_types);
     let lanes = SIMD_LANES;
     let left_reach = i64::from(rel_accesses.max_left);
     let right_reach = i64::from(rel_accesses.max_right);
@@ -417,7 +419,7 @@ fn build_entry_fn(
       let dst_base = dest_ptr.get_addr(fx);
       let dst_row = fx.bcx.ins().iadd(dst_base, dst_row_offset);
 
-      if left_reach == 0 && right_reach == 0 {
+      if left_reach == 0 && right_reach == 0 && int_plan.is_none() {
         codegen_for_loop(fx, start_idx, width, lanes_val, |fx, x_coord| {
           simd_pixel_body(fx, dst_row, x_coord)
         })?;
@@ -432,13 +434,23 @@ fn build_entry_fn(
         simd_pixel_body(fx, dst_row, x_coord)
       })?;
 
-      // Interior: x + lanes - 1 + right_reach <= width - 1.
-      let interior_end = fx.bcx.ins().iadd_imm_s(width, -(lanes - 1 + right_reach));
+      // Interior: x + interior_lanes - 1 + right_reach <= width - 1.
+      let interior_lanes = if int_plan.is_some() { INT_LANES } else { lanes };
+      let interior_end = fx
+        .bcx
+        .ins()
+        .iadd_imm_s(width, -(interior_lanes - 1 + right_reach));
       let zero = fx.bcx.ins().iconst(types::I64, 0);
       let interior_end = fx.bcx.ins().smax(interior_end, zero);
+      let interior_step = fx.bcx.ins().iconst(types::I64, interior_lanes);
       fx.interior = true;
-      let x = codegen_for_loop(fx, x, interior_end, lanes_val, |fx, x_coord| {
-        simd_pixel_body(fx, dst_row, x_coord)
+      let x = codegen_for_loop(fx, x, interior_end, interior_step, |fx, x_coord| {
+        if let Some(plan) = &int_plan {
+          plan.codegen(fx, dst_row, x_coord);
+          Ok(())
+        } else {
+          simd_pixel_body(fx, dst_row, x_coord)
+        }
       });
       fx.interior = false;
       let x = x?;
@@ -1887,6 +1899,14 @@ mod tests {
   }
 
   fn run_expr_u8_padded(expr: &str, src_rows: &[&[u8]]) -> Vec<Vec<u8>> {
+    run_expr_u8_padded_with_boundary(expr, src_rows, None)
+  }
+
+  fn run_expr_u8_padded_with_boundary(
+    expr: &str,
+    src_rows: &[&[u8]],
+    boundary_mode: Option<BoundaryMode>,
+  ) -> Vec<Vec<u8>> {
     let height = src_rows.len();
     let width = src_rows[0].len();
     assert!(src_rows.iter().all(|r| r.len() == width));
@@ -1897,8 +1917,14 @@ mod tests {
     let (mut dst_buf, dst_stride) = alloc_aligned_plane(width, height);
 
     let ast = cranexpr_parser::parse_expr(expr).unwrap();
-    let compiled = compile_jit(&ast, ComponentType::U8, &[ComponentType::U8], None, &[])
-      .expect("should compile expr");
+    let compiled = compile_jit(
+      &ast,
+      ComponentType::U8,
+      &[ComponentType::U8],
+      boundary_mode,
+      &[],
+    )
+    .expect("should compile expr");
 
     let src_ptrs = [src_buf.as_ptr()];
     let src_strides = [src_stride as i64];
@@ -1992,6 +2018,143 @@ mod tests {
     let src: &[&[u8]] = &[&[10, 20, 30, 40, 50, 60, 70, 80]];
     let out = run_expr_u8_padded("x[1,0]", src);
     assert_eq!(out, vec![vec![20, 30, 40, 50, 60, 70, 80, 80]]);
+  }
+
+  /// Deterministic pseudo-random 8-bit plane.
+  fn random_u8_plane(width: usize, height: usize, seed: u32) -> Vec<Vec<u8>> {
+    let mut state = seed.wrapping_mul(2_654_435_761).wrapping_add(1);
+    (0..height)
+      .map(|_| {
+        (0..width)
+          .map(|_| {
+            state = state.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+            (state >> 24) as u8
+          })
+          .collect()
+      })
+      .collect()
+  }
+
+  fn boundary_coord(c: i64, max: i64, mode: BoundaryMode) -> usize {
+    let c = match mode {
+      BoundaryMode::Clamp => c.clamp(0, max - 1),
+      BoundaryMode::Mirror if c < 0 => -c - 1,
+      BoundaryMode::Mirror if c >= max => 2 * max - c - 1,
+      BoundaryMode::Mirror => c,
+    };
+    c as usize
+  }
+
+  /// Checks an integer-exact expression against a scalar reference that
+  /// evaluates `(bias + sum(weight * x[dx,dy])) / divisor` in `f32` the way
+  /// the float path does (clamp to the 8-bit range and round half to even).
+  fn check_u8_weighted_sum(
+    expr: &str,
+    bias: f32,
+    taps: &[(i64, i64, f32)],
+    divisor: f32,
+    boundary_mode: BoundaryMode,
+  ) {
+    let reach = taps
+      .iter()
+      .map(|&(dx, dy, _)| dx.abs().max(dy.abs()))
+      .max()
+      .unwrap_or(0);
+    for (width, height) in [
+      (1, 1),
+      (3, 2),
+      (7, 3),
+      (8, 1),
+      (9, 4),
+      (13, 3),
+      (17, 5),
+      (40, 3),
+    ] {
+      // Mirroring is only defined for offsets within one plane size.
+      if boundary_mode == BoundaryMode::Mirror && reach >= width.min(height) as i64 {
+        continue;
+      }
+      let src = random_u8_plane(width, height, (width * 31 + height) as u32);
+      let rows: Vec<&[u8]> = src.iter().map(Vec::as_slice).collect();
+      let out = run_expr_u8_padded_with_boundary(expr, &rows, Some(boundary_mode));
+
+      for (y, out_row) in out.iter().enumerate() {
+        for (x, &actual) in out_row.iter().enumerate() {
+          let sum: f32 = taps
+            .iter()
+            .map(|&(dx, dy, w)| {
+              let sx = boundary_coord(x as i64 + dx, width as i64, boundary_mode);
+              let sy = boundary_coord(y as i64 + dy, height as i64, boundary_mode);
+              w * f32::from(src[sy][sx])
+            })
+            .sum::<f32>()
+            + bias;
+          let expected = (sum / divisor).clamp(0.0, 255.0).round_ties_even() as u8;
+          assert_eq!(
+            actual, expected,
+            "{expr}: mismatch at ({x}, {y}) for {width}x{height}"
+          );
+        }
+      }
+    }
+  }
+
+  #[rstest]
+  #[case(BoundaryMode::Clamp)]
+  #[case(BoundaryMode::Mirror)]
+  fn test_u8_int_path_binomial_blur(#[case] boundary_mode: BoundaryMode) {
+    check_u8_weighted_sum(
+      "x[-1,-1] x[0,-1] 2 * x[1,-1] x[-1,0] 2 * x 4 * x[1,0] 2 * x[-1,1] x[0,1] 2 * x[1,1] + + + + + + + + 16 /",
+      0.0,
+      &[
+        (-1, -1, 1.0),
+        (0, -1, 2.0),
+        (1, -1, 1.0),
+        (-1, 0, 2.0),
+        (0, 0, 4.0),
+        (1, 0, 2.0),
+        (-1, 1, 1.0),
+        (0, 1, 2.0),
+        (1, 1, 1.0),
+      ],
+      16.0,
+      boundary_mode,
+    );
+  }
+
+  #[rstest]
+  #[case(BoundaryMode::Clamp)]
+  #[case(BoundaryMode::Mirror)]
+  fn test_u8_int_path_negative_and_ties(#[case] boundary_mode: BoundaryMode) {
+    // Differences are negative half the time and odd ones tie when halved.
+    check_u8_weighted_sum(
+      "x[-2,0] x[3,1] - 2 /",
+      0.0,
+      &[(-2, 0, 1.0), (3, 1, -1.0)],
+      2.0,
+      boundary_mode,
+    );
+    check_u8_weighted_sum(
+      "x 128 + x[1,0] - 1 /",
+      128.0,
+      &[(0, 0, 1.0), (1, 0, -1.0)],
+      1.0,
+      boundary_mode,
+    );
+  }
+
+  #[rstest]
+  fn test_u8_int_path_general_weights() {
+    check_u8_weighted_sum(
+      "x[0,-1] 3 * x[0,1] -5 * + x[-1,0] x[1,0] 7 * + + 8 /",
+      0.0,
+      &[(0, -1, 3.0), (0, 1, -5.0), (-1, 0, 1.0), (1, 0, 7.0)],
+      8.0,
+      BoundaryMode::Clamp,
+    );
+    // Without relative access, the LUT is built by running the integer path
+    // over every input value.
+    check_u8_weighted_sum("x 3 * 4 /", 0.0, &[(0, 0, 3.0)], 4.0, BoundaryMode::Clamp);
   }
 
   #[rstest]
