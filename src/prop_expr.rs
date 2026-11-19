@@ -4,9 +4,9 @@ use const_str::cstr;
 use vapoursynth4_rs::{
   VideoInfo,
   core::CoreRef,
-  frame::{Frame, FrameContext, VideoFrame},
+  frame::{FrameContext, VideoFrame},
   key,
-  map::{AppendMode, Key, MapRef, Value},
+  map::{AppendMode, Key, MapMut, MapRef, Value},
   node::{
     ActivationReason, Dependencies, Filter, FilterDependency, Node, RequestPattern, VideoNode,
   },
@@ -60,9 +60,9 @@ impl Filter for PropExprFilter {
 
   fn create(
     input: MapRef<'_>,
-    output: MapRef<'_>,
-    _data: Option<Box<Self::FilterData>>,
-    mut core: CoreRef<'_>,
+    mut output: MapMut<'_>,
+    _data: Option<&Self::FilterData>,
+    core: CoreRef<'_>,
   ) -> Result<(), Self::Error> {
     let Some(num_clips) = input.num_elements(key!(c"clips")) else {
       return Err(CranexprError::NumberOfClips);
@@ -160,7 +160,7 @@ impl Filter for PropExprFilter {
     };
 
     core.create_video_filter(
-      output,
+      &mut output,
       cstr!("PropExpr"),
       &vi,
       Box::new(filter),
@@ -232,7 +232,7 @@ impl Filter for PropExprFilter {
           }
         }
 
-        return Ok(Some(dst));
+        return Ok(Some(dst.freeze()));
       }
       ActivationReason::Error => {}
     }
