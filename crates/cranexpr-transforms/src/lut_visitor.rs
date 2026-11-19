@@ -6,15 +6,16 @@ use crate::visit::{Visitor, walk_expr};
 /// Visitor that decides whether an expression can become a lookup table.
 ///
 /// An expression qualifies when it is a pure function of the current pixel of
-/// a single clip, so the whole expression can be precomputed per input value.
+/// its clips, so the whole expression can be precomputed per combination of
+/// input values. How many clips a table can cover is up to the caller.
 ///
-/// Eligible expressions may only read one clip's current pixel (`x`), use
+/// Eligible expressions may only read clips' current pixels (`x`, `y`), use
 /// literals, arithmetic, and user variables. Anything positional (`X`, `Y`,
 /// relative/absolute pixel access), temporal (`N`), per-clip context
-/// (`width`, `height`), frame properties, or a second clip disqualifies it.
+/// (`width`, `height`), or frame properties disqualifies it.
 pub struct LutVisitor<'a> {
-  /// The single clip identifier referenced so far, if any.
-  pub clip: Option<&'a str>,
+  /// The distinct clip identifiers referenced so far, in order of appearance.
+  pub clips: Vec<&'a str>,
   // Whether or not the expression can become a lookup table.
   pub eligible: bool,
 }
@@ -23,7 +24,7 @@ impl LutVisitor<'_> {
   #[must_use]
   pub const fn new() -> Self {
     Self {
-      clip: None,
+      clips: Vec::new(),
       eligible: true,
     }
   }
@@ -46,10 +47,8 @@ impl<'a> Visitor<'a> for LutVisitor<'a> {
       }
       Expr::Ident(name) => {
         if is_clip_identifier(name) {
-          match self.clip {
-            None => self.clip = Some(name),
-            Some(prev) if prev == name => {}
-            Some(_) => self.eligible = false,
+          if !self.clips.contains(&name.as_str()) {
+            self.clips.push(name);
           }
         } else {
           // X, Y, N, width, height, etc.
@@ -65,32 +64,41 @@ impl<'a> Visitor<'a> for LutVisitor<'a> {
 mod tests {
   use super::*;
 
-  fn check(expr: &str) -> (bool, Option<String>) {
+  fn check(expr: &str) -> (bool, Vec<String>) {
     let ast = cranexpr_parser::parse_expr(expr).unwrap();
     let mut v = LutVisitor::new();
     for node in &ast {
       v.visit_expr(node);
     }
-    (v.eligible, v.clip.map(str::to_owned))
+    (v.eligible, v.clips.into_iter().map(str::to_owned).collect())
   }
 
   #[test]
   fn accepts_single_clip_pure_expr() {
     let (eligible, clip) = check("x 32768 / 0.86 pow 65535 *");
     assert!(eligible);
-    assert_eq!(clip.as_deref(), Some("x"));
+    assert_eq!(clip, ["x"]);
   }
 
   #[test]
   fn accepts_user_variables() {
     let (eligible, clip) = check("x 2 * v! v@ v@ *");
     assert!(eligible);
-    assert_eq!(clip.as_deref(), Some("x"));
+    assert_eq!(clip, ["x"]);
   }
 
   #[test]
-  fn rejects_two_clips() {
-    assert!(!check("x y +").0);
+  fn accepts_two_clips() {
+    let (eligible, clips) = check("x y - y x * +");
+    assert!(eligible);
+    assert_eq!(clips, ["x", "y"]);
+  }
+
+  #[test]
+  fn collects_distinct_clips_in_order() {
+    let (eligible, clips) = check("z x + z y + *");
+    assert!(eligible);
+    assert_eq!(clips, ["z", "x", "y"]);
   }
 
   #[test]
