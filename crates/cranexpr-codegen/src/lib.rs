@@ -4,6 +4,7 @@ pub mod errors;
 
 mod compiler;
 mod context;
+mod int_path;
 mod lut;
 mod math_simd;
 mod pixel_access;
