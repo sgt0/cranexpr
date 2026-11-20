@@ -1089,6 +1089,16 @@ mod tests {
   }
 
   #[rstest]
+  #[case("5 neg", -5.0)]
+  #[case("-3 neg", 3.0)]
+  #[case("0 neg", 0.0)]
+  #[case("2 3 + neg", -5.0)]
+  #[case("5 neg neg", 5.0)]
+  fn test_neg(#[case] expr: &str, #[case] expected: f32) {
+    assert_relative_eq!(run_expr(expr), expected);
+  }
+
+  #[rstest]
   #[case("5 2 %", 1.0)]
   #[case("1.2 1.0 %", 0.2)]
   #[case("-5 2 %", -1.0)]
@@ -2144,6 +2154,13 @@ mod tests {
       128.0,
       &[(0, 0, 1.0), (1, 0, -1.0)],
       1.0,
+      boundary_mode,
+    );
+    check_u8_weighted_sum(
+      "x[-1,0] neg x[1,0] + 255 + 2 /",
+      255.0,
+      &[(-1, 0, -1.0), (1, 0, 1.0)],
+      2.0,
       boundary_mode,
     );
   }
