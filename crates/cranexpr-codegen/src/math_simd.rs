@@ -488,6 +488,19 @@ pub(crate) fn asin_simd(fx: &mut FunctionCx<'_, '_>, x: Value) -> Value {
   atan_simd(fx, quot)
 }
 
+/// Vectorized `acos(x)` over F32X4, computed as
+/// `2 * atan(sqrt((1 - x) / (1 + x)))`.
+pub(crate) fn acos_simd(fx: &mut FunctionCx<'_, '_>, x: Value) -> Value {
+  let one = splat_f32(fx, 1.0);
+  let two = splat_f32(fx, 2.0);
+  let one_minus_x = fx.bcx.ins().fsub(one, x);
+  let one_plus_x = fx.bcx.ins().fadd(one, x);
+  let quot = fx.bcx.ins().fdiv(one_minus_x, one_plus_x);
+  let root = fx.bcx.ins().sqrt(quot);
+  let half = atan_simd(fx, root);
+  fx.bcx.ins().fmul(half, two)
+}
+
 /// Vectorized `atan2(y, x)` over F32X4.
 pub(crate) fn atan2_simd(fx: &mut FunctionCx<'_, '_>, y: Value, x: Value) -> Value {
   // Constants.

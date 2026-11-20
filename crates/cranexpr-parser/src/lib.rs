@@ -300,6 +300,7 @@ pub fn parse_expr(expr: &str) -> Result<Vec<Expr>, ParseError> {
             "sin" => add_unary_op(&mut stack, UnOp::Sine),
             "tan" => add_unary_op(&mut stack, UnOp::Tangent),
             "asin" => add_unary_op(&mut stack, UnOp::Arcsine),
+            "acos" => add_unary_op(&mut stack, UnOp::Arccosine),
             "atan" => add_unary_op(&mut stack, UnOp::Arctangent),
             "trunc" => add_unary_op(&mut stack, UnOp::Trunc),
             "cos" => add_unary_op(&mut stack, UnOp::Cosine),

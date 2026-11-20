@@ -134,6 +134,8 @@ pub enum UnOp {
   Tangent,
   #[strum(serialize = "asin")]
   Arcsine,
+  #[strum(serialize = "acos")]
+  Arccosine,
   #[strum(serialize = "atan")]
   Arctangent,
 }

@@ -995,6 +995,38 @@ mod tests {
   }
 
   #[rstest]
+  #[case(0.0)]
+  #[case(0.25)]
+  #[case(-0.5)]
+  #[case(0.9)]
+  #[case(0.9999)]
+  #[case(-0.9999)]
+  #[case(1.0)]
+  #[case(-1.0)]
+  fn test_acos(#[case] input: f32) {
+    let out = run_expr_padded("x acos", &[&[input; 4]], None);
+    assert_relative_eq!(out[0][0], input.acos(), epsilon = 5e-6);
+  }
+
+  #[rstest]
+  #[case(1.5)]
+  #[case(-1.5)]
+  #[case(f32::NEG_INFINITY)]
+  fn test_acos_out_of_domain(#[case] input: f32) {
+    let out = run_expr_padded("x acos", &[&[input; 4]], None);
+    assert!(out[0][0].is_nan());
+  }
+
+  #[rstest]
+  fn test_acos_per_lane() {
+    let src: &[&[f32]] = &[&[-1.0, -0.3, 0.6, 0.99]];
+    let out = run_expr_padded("x acos", src, None);
+    for (i, &v) in src[0].iter().enumerate() {
+      assert_relative_eq!(out[0][i], v.acos(), epsilon = 5e-6);
+    }
+  }
+
+  #[rstest]
   #[case("1 exp", 1f32.exp())]
   #[case("0 exp", 0f32.exp())]
   #[case("-1 exp", (-1f32).exp())]
