@@ -936,6 +936,32 @@ mod tests {
   }
 
   #[rstest]
+  #[case(0.0)]
+  #[case(0.25)]
+  #[case(-0.5)]
+  #[case(1.0)]
+  #[case(-1.0)]
+  #[case(2.0)]
+  #[case(-10.0)]
+  #[case(1000.0)]
+  #[case(f32::INFINITY)]
+  #[case(f32::NEG_INFINITY)]
+  fn test_atan(#[case] input: f32) {
+    // Infinities can't be written as literals, so feed the input as a pixel.
+    let out = run_expr_padded("x atan", &[&[input; 4]], None);
+    assert_relative_eq!(out[0][0], input.atan(), epsilon = 5e-6);
+  }
+
+  #[rstest]
+  fn test_atan_per_lane() {
+    let src: &[&[f32]] = &[&[-3.0, -0.75, 0.5, 4.0]];
+    let out = run_expr_padded("x atan", src, None);
+    for (i, &v) in src[0].iter().enumerate() {
+      assert_relative_eq!(out[0][i], v.atan(), epsilon = 5e-6);
+    }
+  }
+
+  #[rstest]
   #[case("1 exp", 1f32.exp())]
   #[case("0 exp", 0f32.exp())]
   #[case("-1 exp", (-1f32).exp())]
