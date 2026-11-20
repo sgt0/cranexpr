@@ -95,6 +95,9 @@ pub enum UnOp {
   /// Bitwise NOT
   #[strum(serialize = "bitnot")]
   BitNot,
+  /// The ceiling function.
+  #[strum(serialize = "ceil")]
+  Ceil,
   /// The exponential function (`e^x`).
   #[strum(serialize = "exp")]
   Exp,

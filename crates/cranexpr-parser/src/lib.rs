@@ -286,6 +286,7 @@ pub fn parse_expr(expr: &str) -> Result<Vec<Expr>, ParseError> {
           match text {
             "abs" => add_unary_op(&mut stack, UnOp::Abs),
             "pow" => add_binary_op(&mut stack, BinOp::Pow),
+            "ceil" => add_unary_op(&mut stack, UnOp::Ceil),
             "exp" => add_unary_op(&mut stack, UnOp::Exp),
             "floor" => add_unary_op(&mut stack, UnOp::Floor),
             "round" => add_unary_op(&mut stack, UnOp::Round),
