@@ -262,6 +262,30 @@ pub fn parse_expr(expr: &str) -> Result<Vec<Expr>, ParseError> {
             stack[sj] = Expr::Binary(BinOp::Min, Arc::new(a), Arc::new(b));
           }
         }
+        // `polyvalN` (alias: `polyevalN`) evaluates a degree-N polynomial at the
+        // top value `x`, using the N+1 coefficients below it ordered from the
+        // highest degree to the lowest.
+        else if let Some(degree) = text
+          .strip_prefix("polyval")
+          .or_else(|| text.strip_prefix("polyeval"))
+        {
+          let degree = degree
+            .parse::<usize>()
+            .map_err(|_| ParseError::InvalidPolyvalDegree(text.to_string()))?;
+          if stack.len() < degree + 2 {
+            return Err(ParseError::PolyvalOutOfBounds);
+          }
+          // `x` is shared by every Horner step so that it's only computed once.
+          let x = Arc::new(stack.pop().ok_or(ParseError::PolyvalOutOfBounds)?);
+          let coeffs = stack.split_off(stack.len() - (degree + 1));
+          let mut coeffs = coeffs.into_iter();
+          let mut acc = coeffs.next().ok_or(ParseError::PolyvalOutOfBounds)?;
+          for coeff in coeffs {
+            let scaled = Expr::Binary(BinOp::Mul, Arc::new(acc), Arc::clone(&x));
+            acc = Expr::Binary(BinOp::Add, Arc::new(scaled), Arc::new(coeff));
+          }
+          stack.push(acc);
+        }
         // `var!`: Pops the top value from the stack and stores it in a variable
         // named `var`.
         else if tokens.peek().is_some_and(|(k, _)| *k == TokenKind::Bang) {
@@ -459,6 +483,26 @@ mod tests {
       parse_expr("7 6 5 4 3 2 1 0 dup4 max_val! dup3 min_val! drop8 x min_val@ max_val@ clamp")
         .unwrap()
     );
+  }
+
+  #[rstest]
+  fn test_polyval() {
+    assert_yaml_snapshot!(parse_expr("3 2 1 x polyval2").unwrap());
+  }
+
+  #[rstest]
+  #[case("polyval")]
+  #[case("polyvalx")]
+  #[case("polyeval-1")]
+  fn test_polyval_invalid_degree(#[case] op: &str) {
+    let err = parse_expr(&format!("1 x {op}")).unwrap_err();
+    assert!(matches!(err, ParseError::InvalidPolyvalDegree(_)));
+  }
+
+  #[rstest]
+  fn test_polyval_out_of_bounds() {
+    let err = parse_expr("2 1 x polyval2").unwrap_err();
+    assert!(matches!(err, ParseError::PolyvalOutOfBounds));
   }
 
   #[rstest]

@@ -1,0 +1,17 @@
+---
+source: crates/cranexpr-parser/src/lib.rs
+expression: "parse_expr(\"3 2 1 x polyval2\").unwrap()"
+---
+- Binary:
+    - Add
+    - Binary:
+        - Mul
+        - Binary:
+            - Add
+            - Binary:
+                - Mul
+                - Lit: 3
+                - Ident: x
+            - Lit: 2
+        - Ident: x
+    - Lit: 1

@@ -1614,6 +1614,31 @@ mod tests {
   }
 
   #[rstest]
+  #[case("5 0 polyval0", 5.0)]
+  #[case("2 3 4 polyval1", 11.0)]
+  #[case("3 2 1 2 polyval2", 17.0)]
+  #[case("1 0 -1 3 polyval2", 8.0)]
+  #[case("2 -3 0 5 0.5 polyval3", 4.5)]
+  #[case("3 2 1 2 polyeval2", 17.0)]
+  #[case("7 3 2 1 2 polyval2 +", 24.0)]
+  fn test_polyval(#[case] expr: &str, #[case] expected: f32) {
+    assert_relative_eq!(run_expr(expr), expected);
+  }
+
+  #[rstest]
+  fn test_polyval_per_lane() {
+    let src: &[&[f32]] = &[&[-2.0, 0.0, 0.5, 3.0]];
+    let out = run_expr_padded("0.5 -1 2 x polyval2", src, None);
+    for (i, &v) in src[0].iter().enumerate() {
+      assert_relative_eq!(
+        out[0][i],
+        f32::mul_add(0.5 * v, v, -v) + 2.0,
+        epsilon = 5e-6
+      );
+    }
+  }
+
+  #[rstest]
   fn test_integer_format_clamp() {
     let ast = cranexpr_parser::parse_expr("x 32768 / 0.86 pow 65535 *").unwrap();
 
