@@ -6,8 +6,8 @@ use cranexpr_ast::{BinOp, Expr, TernaryOp, UnOp};
 use crate::context::{FunctionCx, VEC_TYPE};
 use crate::errors::CodegenError;
 use crate::math_simd::{
-  SinCos, atan_simd, atan2_simd, bool_to_float_simd, codegen_float_binop_simd, exp_simd, fmax_simd,
-  fmin_simd, fpow_by_squaring, log_simd, sin_cos_simd, splat_f32, vselect_f32x4,
+  SinCos, asin_simd, atan_simd, atan2_simd, bool_to_float_simd, codegen_float_binop_simd, exp_simd,
+  fmax_simd, fmin_simd, fpow_by_squaring, log_simd, sin_cos_simd, splat_f32, vselect_f32x4,
 };
 use crate::pixel_access::{
   resolve_clip_name, translate_abs_access_simd, translate_rel_access_simd,
@@ -127,6 +127,7 @@ fn translate_expr_simd_inner(
         UnOp::Sine => sin_cos_simd(fx, x, SinCos::Sin),
         UnOp::Cosine => sin_cos_simd(fx, x, SinCos::Cos),
         UnOp::Tangent => sin_cos_simd(fx, x, SinCos::Tan),
+        UnOp::Arcsine => asin_simd(fx, x),
         UnOp::Arctangent => atan_simd(fx, x),
         UnOp::Exp => exp_simd(fx, x),
         UnOp::Log => log_simd(fx, x),

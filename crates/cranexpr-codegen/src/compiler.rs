@@ -962,6 +962,39 @@ mod tests {
   }
 
   #[rstest]
+  #[case(0.0)]
+  #[case(-0.0)]
+  #[case(0.25)]
+  #[case(-0.5)]
+  #[case(0.9)]
+  #[case(0.9999)]
+  #[case(-0.9999)]
+  #[case(1.0)]
+  #[case(-1.0)]
+  fn test_asin(#[case] input: f32) {
+    let out = run_expr_padded("x asin", &[&[input; 4]], None);
+    assert_relative_eq!(out[0][0], input.asin(), epsilon = 5e-6);
+  }
+
+  #[rstest]
+  #[case(1.5)]
+  #[case(-1.5)]
+  #[case(f32::INFINITY)]
+  fn test_asin_out_of_domain(#[case] input: f32) {
+    let out = run_expr_padded("x asin", &[&[input; 4]], None);
+    assert!(out[0][0].is_nan());
+  }
+
+  #[rstest]
+  fn test_asin_per_lane() {
+    let src: &[&[f32]] = &[&[-1.0, -0.3, 0.6, 0.99]];
+    let out = run_expr_padded("x asin", src, None);
+    for (i, &v) in src[0].iter().enumerate() {
+      assert_relative_eq!(out[0][i], v.asin(), epsilon = 5e-6);
+    }
+  }
+
+  #[rstest]
   #[case("1 exp", 1f32.exp())]
   #[case("0 exp", 0f32.exp())]
   #[case("-1 exp", (-1f32).exp())]
