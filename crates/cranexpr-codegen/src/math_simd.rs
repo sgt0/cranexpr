@@ -477,6 +477,17 @@ pub(crate) fn atan_simd(fx: &mut FunctionCx<'_, '_>, x: Value) -> Value {
   copysign_simd(fx, mag, x)
 }
 
+/// Vectorized `asin(x)` over F32X4, computed as `atan(x / sqrt(1 - x^2))`.
+pub(crate) fn asin_simd(fx: &mut FunctionCx<'_, '_>, x: Value) -> Value {
+  let one = splat_f32(fx, 1.0);
+  let one_minus_x = fx.bcx.ins().fsub(one, x);
+  let one_plus_x = fx.bcx.ins().fadd(one, x);
+  let prod = fx.bcx.ins().fmul(one_minus_x, one_plus_x);
+  let denom = fx.bcx.ins().sqrt(prod);
+  let quot = fx.bcx.ins().fdiv(x, denom);
+  atan_simd(fx, quot)
+}
+
 /// Vectorized `atan2(y, x)` over F32X4.
 pub(crate) fn atan2_simd(fx: &mut FunctionCx<'_, '_>, y: Value, x: Value) -> Value {
   // Constants.
