@@ -1588,6 +1588,32 @@ mod tests {
   }
 
   #[rstest]
+  #[case("10 20 0 lerp", 10.0)]
+  #[case("10 20 1 lerp", 20.0)]
+  #[case("10 20 0.5 lerp", 15.0)]
+  #[case("10 20 0.25 lerp", 12.5)]
+  #[case("20 10 0.25 lerp", 17.5)]
+  #[case("10 20 2 lerp", 30.0)]
+  #[case("10 20 -1 lerp", 0.0)]
+  #[case("0.1 0.7 1 lerp", 0.7)]
+  fn test_lerp(#[case] expr: &str, #[case] expected: f32) {
+    assert_relative_eq!(run_expr(expr), expected);
+  }
+
+  #[rstest]
+  fn test_lerp_per_lane() {
+    let src: &[&[f32]] = &[&[0.0, 0.3, 0.8, 1.0]];
+    let out = run_expr_padded("-3 5 x lerp", src, None);
+    for (i, &t) in src[0].iter().enumerate() {
+      assert_relative_eq!(
+        out[0][i],
+        5.0f32.mul_add(t, -3.0 * (1.0 - t)),
+        epsilon = 5e-6
+      );
+    }
+  }
+
+  #[rstest]
   fn test_integer_format_clamp() {
     let ast = cranexpr_parser::parse_expr("x 32768 / 0.86 pow 65535 *").unwrap();
 
