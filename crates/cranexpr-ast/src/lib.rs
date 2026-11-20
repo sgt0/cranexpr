@@ -146,6 +146,9 @@ pub enum TernaryOp {
   /// The `clip` or `clamp` operator (clamps a value to a range).
   #[strum(serialize = "clip")]
   Clip,
+  /// The `lerp` operator (linear interpolation, `a b t lerp`).
+  #[strum(serialize = "lerp")]
+  Lerp,
 }
 
 /// The AST node for expressions.

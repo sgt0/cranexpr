@@ -35,6 +35,8 @@ core.cranexpr.Expr([x], "x[-1,-1] x[0,-1] x[1,-1] x[-1,0] x x[1,0] x[-1,1] x[0,1
 - Rounding: `floor`, `ceil`, `round`, `trunc`.
 - Ternary (if/else): `?`.
 - `sgn`: Returns the sign of a value (-1 if negative, 1 if positive, 0 if zero).
+- `lerp`: `a b t lerp` linearly interpolates between `a` and `b`, i.e.
+  `a * (1 - t) + b * t`.
 - Constants:
   - `width`: Width of the plane.
   - `height`: Height of the plane.

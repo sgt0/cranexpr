@@ -305,6 +305,7 @@ pub fn parse_expr(expr: &str) -> Result<Vec<Expr>, ParseError> {
             "trunc" => add_unary_op(&mut stack, UnOp::Trunc),
             "cos" => add_unary_op(&mut stack, UnOp::Cosine),
             "clip" | "clamp" => add_ternary_op(&mut stack, TernaryOp::Clip),
+            "lerp" => add_ternary_op(&mut stack, TernaryOp::Lerp),
             "atan2" => add_binary_op(&mut stack, BinOp::Atan2),
             "bitand" => add_binary_op(&mut stack, BinOp::BitAnd),
             "bitor" => add_binary_op(&mut stack, BinOp::BitOr),

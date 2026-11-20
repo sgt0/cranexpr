@@ -92,6 +92,12 @@ fn translate_expr_simd_inner(
           let min_result = fmin_simd(fx, a, max_val);
           fmax_simd(fx, min_result, min_val)
         }
+        TernaryOp::Lerp => {
+          // a - t * a + t * b
+          let neg_t = fx.bcx.ins().fneg(c);
+          let a_scaled = fx.bcx.ins().fma(neg_t, a, a);
+          fx.bcx.ins().fma(c, b, a_scaled)
+        }
       })
     }
 
