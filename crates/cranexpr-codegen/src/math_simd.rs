@@ -435,7 +435,7 @@ pub(crate) fn fpow_by_squaring(fx: &mut FunctionCx<'_, '_>, base: Value, exp: u3
 
 /// Vectorized minimax-polynomial approximation of `atan(x)` over F32X4.
 #[allow(clippy::excessive_precision)]
-fn atan_simd(fx: &mut FunctionCx<'_, '_>, x: Value) -> Value {
+pub(crate) fn atan_simd(fx: &mut FunctionCx<'_, '_>, x: Value) -> Value {
   // Coefficients for a minimax polynomial of atan on [-1, 1], evaluated as
   // `atan(z) ~= z + z * z^2 * poly(z^2)`.
   // <https://github.com/shibatch/sleef/blob/3.9.0/src/libm/sleefsp.c#L942-L949>

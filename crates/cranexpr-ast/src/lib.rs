@@ -132,6 +132,8 @@ pub enum UnOp {
   Cosine,
   #[strum(serialize = "tan")]
   Tangent,
+  #[strum(serialize = "atan")]
+  Arctangent,
 }
 
 /// Ternary operator.

@@ -27,7 +27,7 @@ core.cranexpr.Expr([x], "x[-1,-1] x[0,-1] x[1,-1] x[-1,0] x x[1,0] x[-1,1] x[0,1
 ## Features
 
 - Arithmetic: `+`, `-`, `*`, `/`, `%`, `pow`, `exp`, `log`, `sqrt`, `neg`.
-- Trigonometry: `sin`, `cos`, `tan`, `atan2`.
+- Trigonometry: `sin`, `cos`, `tan`, `atan`, `atan2`.
 - Comparison: `>`, `<`, `=`, `>=`, `<=`.
 - Logical: `and`, `or`, `xor`, `not`.
 - Bitwise: `bitand`, `bitor`, `bitxor`, `bitnot`.
