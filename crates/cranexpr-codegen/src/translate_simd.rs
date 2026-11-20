@@ -98,6 +98,7 @@ fn translate_expr_simd_inner(
       let x = translate_expr_simd(fx, x)?;
       Ok(match op {
         UnOp::Abs => fx.bcx.ins().fabs(x),
+        UnOp::Ceil => fx.bcx.ins().ceil(x),
         UnOp::Floor => fx.bcx.ins().floor(x),
         UnOp::Round => fx.bcx.ins().nearest(x),
         UnOp::Neg => fx.bcx.ins().fneg(x),
