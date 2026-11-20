@@ -18,11 +18,17 @@ pub enum ParseError {
   #[error("Invalid literal: {0}")]
   InvalidLiteral(String),
 
+  #[error("Invalid polyval degree: {0}")]
+  InvalidPolyvalDegree(String),
+
   #[error("Invalid sort size: {0}")]
   InvalidSortSize(String),
 
   #[error("Missing frame property name.")]
   MissingFramePropertyName,
+
+  #[error("Not enough values on the stack for polyval.")]
+  PolyvalOutOfBounds,
 
   #[error("Frame property name is not an identifier.")]
   PropertyNameNotAnIdentifier,
