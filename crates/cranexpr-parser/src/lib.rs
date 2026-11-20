@@ -292,6 +292,7 @@ pub fn parse_expr(expr: &str) -> Result<Vec<Expr>, ParseError> {
             "log" => add_unary_op(&mut stack, UnOp::Log),
             "max" => add_binary_op(&mut stack, BinOp::Max),
             "min" => add_binary_op(&mut stack, BinOp::Min),
+            "neg" => add_unary_op(&mut stack, UnOp::Neg),
             "not" => add_unary_op(&mut stack, UnOp::Not),
             "sgn" => add_unary_op(&mut stack, UnOp::Sign),
             "sqrt" => add_unary_op(&mut stack, UnOp::Sqrt),
